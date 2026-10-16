@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>Lobby · PlaySphere</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: { brand: { 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6' } },
+      fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+    } },
+  };
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html, body { overscroll-behavior: none; }
+  #world {
+    background:
+      radial-gradient(circle at 20% 20%, rgba(124,58,237,0.35), transparent 40%),
+      radial-gradient(circle at 80% 80%, rgba(236,72,153,0.25), transparent 40%),
+      #0b0f19;
+    touch-action: none;
+  }
+  #world::before {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(148,163,184,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,0.08) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+  }
+  .avatar-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    transition: left 0.08s linear, top 0.08s linear;
+    cursor: pointer;
+    z-index: 2;
+  }
+  .avatar-node.me { z-index: 5; }
+  .avatar-node .label {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    top: calc(100% + 6px);
+    font-size: 11px; padding: 2px 8px; border-radius: 9999px;
+    background: rgba(15,23,42,0.85); color: #e2e8f0;
+    white-space: nowrap; border: 1px solid rgba(148,163,184,0.2);
+  }
+  .avatar-node.me .label { border-color: #7c3aed; }
+
+  /* Mobile: bigger world, smaller labels */
+  @media (max-width: 767px) {
+    .avatar-node .label { font-size: 10px; padding: 1px 6px; top: calc(100% + 4px); }
+    #world { border-radius: 0; }
+  }
+</style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+
+  <header class="border-b border-slate-900 sticky top-0 z-30 bg-slate-950/95 backdrop-blur">
+    <div class="mx-auto max-w-6xl px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2 sm:gap-3">
+        <a href="/dashboard" class="flex items-center gap-2">
+          <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold">P</div>
+          <span class="font-bold hidden sm:inline">PlaySphere</span>
+        </a>
+        <span class="text-xs text-slate-500 hidden sm:inline">· Lobby</span>
+      </div>
+      <div class="flex items-center gap-2 sm:gap-3">
+        <span id="onlineCount" class="text-xs text-emerald-400">● connecting…</span>
+        <div id="myAvatarSmall"></div>
+        <a href="/dashboard" class="text-sm text-slate-400 hover:text-slate-100">Exit</a>
+      </div>
+    </div>
+  </header>
+
+    <main class="mx-auto max-w-6xl px-0 sm:px-4 py-0 sm:py-4">
+    <div id="world" class="relative w-full sm:aspect-video sm:rounded-2xl sm:border sm:border-slate-800 overflow-hidden"
+         style="height: calc(100vh - 6rem);">
+    </div>
+
+        <!-- PUBLIC ROOMS -->
+    <section class="mt-4 sm:mt-6 mx-3 sm:mx-0 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-xs uppercase tracking-widest text-slate-500">🚪 Open Rooms</div>
+        <div class="flex items-center gap-2">
+          <div id="roomsMsg" class="hidden text-[11px] text-brand-400"></div>
+          <button id="refreshRoomsBtn" class="text-[10px] text-slate-400 hover:text-slate-100 underline">refresh</button>
+        </div>
+      </div>
+      <!-- Create buttons -->
+            <!-- Create buttons -->
+      <div class="grid grid-cols-3 gap-2 mb-2">
+        <button id="createLudo4Btn" class="rounded-lg bg-gradient-to-r from-brand-600 to-fuchsia-600 hover:opacity-90 px-3 py-2.5 text-xs font-bold transition">
+          🎯 4P Ludo
+        </button>
+        <button id="createLudo3Btn" class="rounded-lg border border-slate-700 hover:bg-slate-800 px-3 py-2.5 text-xs font-bold transition">
+          🎯 3P Ludo
+        </button>
+        <button id="createLudo2Btn" class="rounded-lg border border-slate-700 hover:bg-slate-800 px-3 py-2.5 text-xs font-bold transition">
+          🎯 2P Ludo
+        </button>
+      </div>
+      <div class="grid grid-cols-1 gap-2 mb-3">
+        <button id="createChessBtn" class="rounded-lg bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 border border-slate-600 px-3 py-2.5 text-xs font-bold transition">
+          ♟️ Chess (2 Players)
+        </button>
+      </div>
+
+      <!-- Join by code -->
+      <div class="flex gap-2 mb-3">
+        <input id="roomCodeInput" type="text" maxlength="6" placeholder="Enter room code"
+          class="flex-1 rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:border-brand-500" />
+        <button id="roomCodeBtn" class="rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs font-bold transition">
+          Join
+        </button>
+      </div>
+
+      <!-- Open rooms list -->
+      <div id="roomsList" class="space-y-2">
+        <div class="text-xs text-slate-500 text-center py-4">Loading rooms…</div>
+      </div>
+    </section>
+  </main>
+    <p class="hidden sm:block mt-3 text-xs text-slate-500 text-center">
+      Move with <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">W A S D</kbd>
+      or <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">↑ ← ↓ →</kbd> · Click a player to interact.
+    </p>
+    <p class="sm:hidden absolute bottom-3 left-0 right-0 text-xs text-slate-500 text-center pointer-events-none">
+      Drag anywhere to move · Tap a player
+    </p>
+  </main>
+
+  <div id="popup" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm items-center justify-center p-4">
+    <div class="w-full max-w-[340px] rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+      <div class="flex items-center gap-4">
+        <div id="popupAvatar"></div>
+        <div>
+          <div id="popupName" class="font-bold text-lg"></div>
+          <div id="popupLevel" class="text-xs text-slate-400"></div>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 mt-6">
+        <button id="challengeBtn" class="rounded-lg bg-brand-600 hover:bg-brand-700 px-3 py-2 text-xs font-semibold transition">⚔️ Challenge</button>
+        <a id="messageBtn" href="#" class="text-center rounded-lg bg-slate-800 hover:bg-slate-700 px-3 py-2 text-xs font-semibold transition">💬 Message</a>
+      </div>
+      <button id="popupClose" class="mt-4 w-full rounded-lg border border-slate-700 px-3 py-2 text-xs hover:bg-slate-800">Close</button>
+    </div>
+  </div>
+
+  <div id="challengeModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm items-center justify-center p-4">
+    <div class="w-full max-w-[380px] rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+      <div class="text-xs uppercase tracking-widest text-brand-500">Incoming challenge</div>
+      <div class="flex items-center gap-4 mt-4">
+        <div id="challengerAvatar"></div>
+        <div>
+          <div id="challengerName" class="font-bold text-lg"></div>
+          <div class="text-xs text-slate-400">wants to play dice</div>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 mt-6">
+        <button id="acceptChallenge" class="rounded-lg bg-brand-600 hover:bg-brand-700 px-3 py-2 text-sm font-semibold transition">Accept</button>
+        <button id="declineChallenge" class="rounded-lg border border-slate-700 hover:bg-slate-800 px-3 py-2 text-sm font-semibold transition">Decline</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-slate-800 border border-slate-700 px-4 py-2 text-sm"></div>
+
+  <script type="module" src="/static/js/lobby.js"></script>
+    <script type="module" src="/static/js/lobby-rooms.js"></script>
+</body>
+</html>

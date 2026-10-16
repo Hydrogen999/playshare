@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Friends · PlaySphere</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: { brand: { 400: '#a78bfa', 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6' } },
+      fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+    } },
+  };
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  .chat-scroll::-webkit-scrollbar { width: 4px; }
+  .chat-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+  /* Mobile layout: hide chat panel until a chat is opened */
+  @media (max-width: 767px) {
+    body.chat-open #listPanel { display: none; }
+    body:not(.chat-open) #chatPanel { display: none; }
+    #chatPanel { position: fixed; inset: 0; z-index: 40; border-radius: 0; }
+  }
+
+  /* Desktop: both visible side-by-side */
+  @media (min-width: 768px) {
+    #chatPanel { position: relative; }
+    #mobileBack { display: none; }
+  }
+</style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+
+  <header class="border-b border-slate-900 sticky top-0 z-30 bg-slate-950/95 backdrop-blur">
+    <div class="mx-auto max-w-6xl px-4 sm:px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <a href="/dashboard" class="flex items-center gap-2">
+          <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold">P</div>
+          <span class="font-bold hidden sm:inline">PlaySphere</span>
+        </a>
+        <span class="text-xs text-slate-500">· Friends</span>
+      </div>
+      <div class="flex items-center gap-3 text-sm">
+        <a href="/lobby" class="text-slate-400 hover:text-slate-100">Lobby</a>
+        <a href="/dashboard" class="text-slate-400 hover:text-slate-100">Home</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-0 sm:px-4 py-0 sm:py-6">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-0 sm:gap-4 h-[calc(100vh-3.5rem)] sm:h-[80vh]">
+
+      <!-- LEFT: List panel -->
+      <div id="listPanel" class="md:col-span-1 sm:rounded-2xl sm:border border-slate-800 bg-slate-900/60 flex flex-col overflow-hidden">
+        <div class="p-3 border-b border-slate-800">
+          <input id="searchInput" type="text" placeholder="Search players…"
+            class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500" />
+        </div>
+
+        <div class="flex border-b border-slate-800 text-xs font-semibold">
+          <button data-tab="friends" class="tab-btn flex-1 py-3 text-brand-400 border-b-2 border-brand-500">Friends</button>
+          <button data-tab="requests" class="tab-btn flex-1 py-3 text-slate-400 hover:text-slate-200">
+            Requests <span id="reqBadge" class="ml-1 px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 text-[10px] hidden">0</span>
+          </button>
+          <button data-tab="chats" class="tab-btn flex-1 py-3 text-slate-400 hover:text-slate-200">Chats</button>
+        </div>
+
+        <div id="listArea" class="flex-1 overflow-y-auto chat-scroll"></div>
+      </div>
+
+      <!-- RIGHT: Chat panel -->
+      <div id="chatPanel" class="md:col-span-2 sm:rounded-2xl sm:border border-slate-800 bg-slate-900/60 flex flex-col overflow-hidden">
+        <div id="chatHeader" class="px-3 sm:px-4 py-3 border-b border-slate-800 flex items-center gap-3">
+          <button id="mobileBack" class="md:hidden text-slate-400 hover:text-slate-100 p-1 -ml-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div id="chatHeaderContent" class="text-sm text-slate-400">Select a conversation</div>
+        </div>
+
+        <div id="chatMessages" class="flex-1 overflow-y-auto p-3 sm:p-4 chat-scroll space-y-2"></div>
+
+        <form id="chatForm" class="border-t border-slate-800 p-2 sm:p-3 flex gap-2 hidden">
+          <input id="chatInput" type="text" maxlength="1000" placeholder="Type a message…"
+            class="flex-1 rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500" />
+          <button type="submit" class="rounded-lg bg-brand-600 hover:bg-brand-700 px-4 py-2 text-sm font-semibold transition">Send</button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="/static/js/friends.js"></script>
+</body>
+</html>

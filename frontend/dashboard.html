@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Dashboard · PlaySphere</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: { brand: { 400: '#a78bfa', 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6' } },
+      fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+    } },
+  };
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  @keyframes xpFill { from { width: 0%; } }
+  @keyframes levelPop { 0% { transform: scale(1); } 50% { transform: scale(1.25); } 100% { transform: scale(1); } }
+  .level-badge.pop { animation: levelPop 0.6s ease-out; }
+  .xp-fill { animation: xpFill 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
+</style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+
+  <header class="border-b border-slate-900 sticky top-0 z-40 bg-slate-950/95 backdrop-blur">
+    <div class="mx-auto max-w-6xl px-3 sm:px-6 py-3 flex items-center justify-between gap-2">
+      <a href="/dashboard" class="flex items-center gap-2 flex-shrink-0">
+        <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold">P</div>
+        <span class="font-bold hidden sm:inline">PlaySphere</span>
+      </a>
+      <div class="flex items-center gap-2 sm:gap-4 text-sm flex-shrink-0">
+        <a href="friends" class="relative text-slate-400 hover:text-slate-100 flex items-center gap-1">
+           <a href="/settings" class="text-slate-400 hover:text-slate-100">⚙️</a>
+          <span class="text-base">👥</span>
+          <span class="hidden sm:inline">Friends</span>
+          <span id="notifBadge" class="hidden absolute -top-2 -right-2 sm:-right-3 px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold"></span>
+        </a>
+        <a href="premium" class="text-amber-400 hover:text-amber-300 flex items-center gap-1">
+          <span class="text-base">👑</span>
+          <span class="hidden sm:inline">Premium</span>
+        </a>
+        <button id="logoutBtn" class="text-slate-400 hover:text-slate-100 flex items-center gap-1">
+          <span class="text-base">🚪</span>
+          <span class="hidden sm:inline">Log out</span>
+                 
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-3 sm:px-6 py-6 sm:py-10">
+
+    <div class="flex items-center gap-4 sm:gap-5">
+      <div id="avatarSlot"></div>
+      <div class="flex-1 min-w-0">
+        <h1 class="text-xl sm:text-2xl font-bold truncate flex items-center gap-2 flex-wrap">
+          Welcome, <span id="username" class="text-brand-500">…</span>
+          <span id="premiumBadge" class="hidden text-amber-400 text-base">👑</span>
+        </h1>
+        <div class="mt-1 flex items-center gap-2 flex-wrap">
+          <span id="levelBadge" class="text-[10px] sm:text-xs font-bold px-2 py-1 rounded bg-brand-500/20 text-brand-400 border border-brand-500/40">LV 1</span>
+          <span id="premiumBadgeSmall" class="hidden text-[10px] sm:text-xs font-bold px-2 py-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40">👑 PREMIUM</span>
+          <span id="subline" class="text-xs sm:text-sm text-slate-400 truncate">Dashboard</span>
+        </div>
+      </div>
+    </div>
+
+        <!-- CHESS RATING CARD -->
+    <div id="chessCard" class="mt-5 sm:mt-6 rounded-2xl border-2 border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-900/40 p-4 sm:p-5">
+      <div class="flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div id="chessTierIcon" class="text-4xl sm:text-5xl">♟️</div>
+          <div>
+            <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-500 font-bold">Chess Rating</div>
+            <div class="flex items-center gap-2 mt-0.5">
+              <span id="chessRating" class="text-2xl sm:text-3xl font-black">–</span>
+              <span id="chessTierLabel" class="text-xs sm:text-sm font-bold px-2 py-0.5 rounded-full">–</span>
+            </div>
+          </div>
+        </div>
+        <a href="/room?game=chess" class="hidden sm:inline-block rounded-lg bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 border border-slate-600 px-4 py-2.5 text-xs font-bold transition whitespace-nowrap">
+          ♟️ Play Chess
+        </a>
+      </div>
+      <div class="mt-4">
+        <div class="flex items-center justify-between text-[10px] sm:text-xs text-slate-500 mb-1.5">
+          <span id="chessTierFrom">–</span>
+          <span id="chessTierTo">–</span>
+        </div>
+        <div class="h-2.5 rounded-full bg-slate-800 overflow-hidden">
+          <div id="chessTierBar" class="h-full rounded-full transition-all" style="width: 0%"></div>
+        </div>
+        <div id="chessRecord" class="mt-2 text-[10px] sm:text-xs text-slate-500 text-center">–</div>
+      </div>
+      <a href="/room?game=chess" class="sm:hidden mt-3 block text-center rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-4 py-2.5 text-xs font-bold transition">
+        ♟️ Play Chess
+      </a>
+    </div>
+
+
+    <!-- XP -->
+    <div class="mt-5 sm:mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-500">XP Progress</div>
+        <div class="text-[10px] sm:text-xs text-slate-400">
+          <span id="xpInLevel">0</span> / <span id="xpNeeded">100</span> XP
+        </div>
+      </div>
+      <div class="h-3 rounded-full bg-slate-800 overflow-hidden">
+        <div id="xpBar" class="h-full rounded-full bg-gradient-to-r from-brand-500 via-fuchsia-500 to-emerald-400 xp-fill" style="width: 0%"></div>
+      </div>
+      <div class="mt-2 text-[10px] sm:text-xs text-slate-500 text-right">
+        Total: <span id="xpTotal" class="text-slate-300 font-semibold">0</span> XP
+      </div>
+    </div>
+
+    <!-- DAILY REWARD -->
+    <div id="dailyCard" class="mt-4 sm:mt-6 rounded-2xl border border-slate-800 bg-gradient-to-br from-brand-600/20 via-slate-900/60 to-slate-900/60 p-4 sm:p-5">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-[10px] sm:text-xs uppercase tracking-widest text-brand-400 font-bold">🎁 Daily Reward</div>
+          <div id="dailyStreak" class="text-xs sm:text-sm text-slate-400 mt-0.5">Loading…</div>
+        </div>
+        <button id="claimDailyBtn" class="hidden rounded-lg bg-brand-600 hover:bg-brand-700 px-4 py-2 text-sm font-bold transition">
+          Claim
+        </button>
+      </div>
+      <div id="dailyDays" class="grid grid-cols-7 gap-1.5 sm:gap-2"></div>
+      <div id="dailyMsg" class="hidden mt-3 text-center text-sm"></div>
+    </div>
+
+
+        <!-- REWARDED AD SLOT -->
+    <div id="rewardedSlot" class="hidden mt-4 sm:mt-6"></div>
+
+    <!-- BANNER AD SLOT -->
+    <div id="bannerSlot" class="hidden mt-4 sm:mt-6"></div>
+
+
+    <!-- STATS MINI -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-4 sm:mt-6">
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="text-[10px] sm:text-xs uppercase text-slate-500">PlayCoins</div>
+        <div id="tokens" class="text-xl sm:text-2xl font-bold mt-1">–</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="text-[10px] sm:text-xs uppercase text-slate-500">Level</div>
+        <div id="level" class="text-xl sm:text-2xl font-bold mt-1">–</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="text-[10px] sm:text-xs uppercase text-slate-500">Games</div>
+        <div id="statGames" class="text-xl sm:text-2xl font-bold mt-1">–</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="text-[10px] sm:text-xs uppercase text-slate-500">Win rate</div>
+        <div id="statWinRate" class="text-xl sm:text-2xl font-bold mt-1">–</div>
+      </div>
+    </div>
+
+    <!-- ACTION BUTTONS -->
+    <div class="mt-5 sm:mt-6 grid grid-cols-2 gap-2 sm:gap-3">
+      <a href="/lobby" class="text-center rounded-lg bg-brand-600 hover:bg-brand-700 transition px-4 py-3 text-sm font-bold">
+        🎮 Enter Lobby
+      </a>
+      <a href="/friends" class="text-center rounded-lg border border-slate-700 hover:bg-slate-800 transition px-4 py-3 text-sm font-bold">
+        👥 Friends
+      </a>
+      <a href="/shop" class="text-center rounded-lg border border-slate-700 hover:bg-slate-800 transition px-4 py-3 text-sm font-bold">
+        🛍️ Shop
+      </a>
+      <a href="/tournaments" class="text-center rounded-lg border border-slate-700 hover:bg-slate-800 transition px-4 py-3 text-sm font-bold">
+        🏆 Tournaments
+      </a>
+      
+      <a href="/buy" class="text-center rounded-lg bg-gradient-to-r from-brand-600 to-emerald-500 hover:opacity-90 transition px-4 py-3 text-sm font-bold">
+        🪙 Buy PlayCoins
+      </a>
+      <a href="/premium" class="text-center rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 hover:opacity-90 transition px-4 py-3 text-sm font-bold text-slate-900">
+        👑 Premium
+      </a>
+            <a href="/leaderboards" class="text-center rounded-lg border border-slate-700 hover:bg-slate-800 transition px-4 py-3 text-sm font-bold">
+        🏆 Leaderboards
+      </a>
+            <a href="/referral" class="text-center rounded-lg border border-slate-700 hover:bg-slate-800 transition px-4 py-3 text-sm font-bold">
+        🎁 Refer &amp; Earn
+      </a>
+            <a href="/achievements" class="text-center rounded-lg border border-slate-700 hover:bg-slate-800 transition px-4 py-3 text-sm font-bold">
+        🏅 Achievements
+      </a>
+            <a href="/battlepass" class="col-span-2 text-center rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 hover:opacity-90 transition px-4 py-3 text-sm font-black text-slate-900">
+        🎫 Battle Pass
+      </a>
+      <a href="/profile" class="col-span-2 text-center rounded-lg border border-slate-700 hover:bg-slate-800 transition px-4 py-3 text-sm font-bold">
+        Edit profile
+      </a>
+    </div>
+
+    <!-- STATS + HISTORY -->
+    <section class="mt-6 sm:mt-10 grid lg:grid-cols-3 gap-4 sm:gap-6">
+      <div class="lg:col-span-1 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
+        <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-500 mb-3 sm:mb-4">Your Stats</div>
+        <div class="space-y-3 sm:space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs sm:text-sm text-slate-400">Games played</span>
+            <span id="statGames2" class="text-base sm:text-lg font-bold">–</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs sm:text-sm text-emerald-400">Wins</span>
+            <span id="statWins" class="text-base sm:text-lg font-bold text-emerald-400">–</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs sm:text-sm text-red-400">Losses</span>
+            <span id="statLosses" class="text-base sm:text-lg font-bold text-red-400">–</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs sm:text-sm text-slate-400">Draws</span>
+            <span id="statDraws" class="text-base sm:text-lg font-bold text-slate-300">–</span>
+          </div>
+          <div class="pt-3 sm:pt-4 border-t border-slate-800 flex items-center justify-between">
+            <span class="text-xs sm:text-sm text-slate-400">Win rate</span>
+            <span id="statWinRate2" class="text-base sm:text-lg font-bold text-brand-400">–</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
+        <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-500 mb-3 sm:mb-4">Recent matches</div>
+        <div id="matchList" class="space-y-2">
+          <div class="text-slate-500 text-sm">Loading…</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+    <script type="module" src="/static/js/dashboard.js"></script>
+      <script type="module">
+    import { api } from "/static/js/api.js";
+    import { notify, getPushPrefs } from "/static/js/notifications.js";
+    // Poll notifications and fire browser notifications
+    let _seenIds = new Set();
+    async function pollAndNotify() {
+      try {
+        const list = await api.listNotifications(true);
+        for (const n of list) {
+          if (_seenIds.has(n.id)) continue;
+          _seenIds.add(n.id);
+          if (n.type === "dm") {
+            notify("💬 New message", n.payload.preview || "You have a new DM", "dm");
+          } else if (n.type === "friend_request") {
+            notify("🤝 Friend request", `${n.payload.from_username || "Someone"} wants to be friends`, "friend");
+          } else if (n.type === "friend_accepted") {
+            notify("✓ Friend accepted", `${n.payload.from_username || "Someone"} accepted your request`, "friend");
+          } else if (n.type === "achievement") {
+            notify(`🏅 ${n.payload.name || "Achievement"}`, "You unlocked a new achievement!", "achievement");
+          } else if (n.type === "tournament_match") {
+            notify("🏆 Match ready", "Your next tournament match is waiting", "tournament");
+          } else if (n.type === "challenge" || n.type === "challenge_incoming") {
+            notify("⚔️ Challenge received", `${n.payload.from_username || "Someone"} challenged you!`, "challenge");
+          } else if (n.type === "tournament_win") {
+            notify("🏆 Tournament result", `You finished #${n.payload.placement}`, "tournament");
+          }
+        }
+      } catch {}
+    }
+    pollAndNotify();
+    setInterval(pollAndNotify, 10000);
+  </script>
+  <script type="module">
+    import { renderBanner, renderRewarded } from "/static/js/ads.js";
+    renderBanner("bannerSlot");
+    renderRewarded("rewardedSlot");
+  </script>
+</body>
+</html>

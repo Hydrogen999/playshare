@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ads Admin · PlaySphere</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { theme: { extend: {
+    colors: { brand: { 500: '#7c3aed', 600: '#6d28d9' } },
+    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+  } } };
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+
+  <header class="border-b border-slate-900">
+    <div class="mx-auto max-w-3xl px-4 sm:px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold">P</div>
+        <span class="font-bold">Ads Admin</span>
+      </div>
+      <a href="/dashboard" class="text-sm text-slate-400 hover:text-slate-100">← Back</a>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-3xl px-4 sm:px-6 py-8">
+    <h1 class="text-2xl font-black mb-1">Ad Settings</h1>
+    <p class="text-sm text-slate-400 mb-6">Control banners + rewarded video. Premium users never see ads.</p>
+
+    <div id="msg" class="hidden mb-4 rounded-lg p-3 text-sm border"></div>
+
+    <form id="form" class="space-y-5 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <div>
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" id="enabled" class="w-5 h-5 accent-brand-500" />
+          <span class="font-bold">Enable ads globally</span>
+        </label>
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-slate-400 mb-1">Banner Ad Code (HTML from AdSense or other network)</label>
+        <textarea id="banner_code" rows="4" placeholder="<ins class=&quot;adsbygoogle&quot; ...></ins>"
+          class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-xs font-mono focus:outline-none focus:border-brand-500"></textarea>
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-slate-400 mb-1">Rewarded Video Ad Code (HTML/JS from provider)</label>
+        <textarea id="rewarded_code" rows="4" placeholder="Your rewarded video embed code..."
+          class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-xs font-mono focus:outline-none focus:border-brand-500"></textarea>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1">Coins per video</label>
+          <input type="number" id="rewarded_coins" min="1" max="1000"
+            class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm focus:outline-none focus:border-brand-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1">Daily limit (per user)</label>
+          <input type="number" id="rewarded_daily_limit" min="1" max="100"
+            class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm focus:outline-none focus:border-brand-500" />
+        </div>
+      </div>
+
+      <button type="submit" class="w-full rounded-lg bg-brand-600 hover:bg-brand-700 px-4 py-3 text-sm font-bold transition">
+        Save Settings
+      </button>
+    </form>
+
+    <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/40 p-4 text-xs text-slate-400">
+      <div class="font-bold text-slate-300 mb-2">💡 How to get real ad codes:</div>
+      <ul class="list-disc list-inside space-y-1">
+        <li><strong>Banners:</strong> Apply at <a href="https://adsense.google.com" class="text-brand-500 underline" target="_blank">Google AdSense</a> (needs your own domain)</li>
+        <li><strong>Rewarded video:</strong> <a href="https://www.monetag.com" class="text-brand-500 underline" target="_blank">Monetag</a>, <a href="https://adsterra.com" class="text-brand-500 underline" target="_blank">Adsterra</a>, or <a href="https://admob.google.com" class="text-brand-500 underline" target="_blank">AdMob</a></li>
+        <li>Paste the code above, toggle <strong>Enable ads</strong>, save</li>
+      </ul>
+    </div>
+  </main>
+
+  <script type="module">
+    import { api } from "/static/js/api.js";
+
+    const $ = (id) => document.getElementById(id);
+
+    function showMsg(text, type = "success") {
+      const el = $("msg");
+      el.className = `mb-4 rounded-lg p-3 text-sm border ${type === "success" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-red-500/10 border-red-500/40 text-red-400"}`;
+      el.textContent = text;
+      el.classList.remove("hidden");
+      setTimeout(() => el.classList.add("hidden"), 3000);
+    }
+
+    async function loadConfig() {
+      try {
+        const me = await api.me();
+        if (me.role !== "admin") { window.location.href = "/dashboard"; return; }
+        const cfg = await api.adConfig();
+        $("enabled").checked = !!cfg.enabled;
+        $("banner_code").value = cfg.banner_code || "";
+        $("rewarded_code").value = cfg.rewarded_code || "";
+        $("rewarded_coins").value = cfg.rewarded_coins || 10;
+        $("rewarded_daily_limit").value = cfg.rewarded_daily_limit || 5;
+      } catch (err) {
+        showMsg(err.message, "error");
+      }
+    }
+
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        await api.request("/api/v1/ads/admin/update", {
+          method: "POST",
+          body: {
+            enabled: $("enabled").checked,
+            banner_code: $("banner_code").value,
+            rewarded_code: $("rewarded_code").value,
+            rewarded_coins: Number($("rewarded_coins").value),
+            rewarded_daily_limit: Number($("rewarded_daily_limit").value),
+          },
+        });
+        showMsg("Saved! ✓");
+      } catch (err) {
+        showMsg(err.message, "error");
+      }
+    });
+
+    loadConfig();
+  </script>
+</body>
+</html>

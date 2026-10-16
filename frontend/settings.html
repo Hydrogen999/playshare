@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Settings · PlaySphere</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { theme: { extend: {
+    colors: { brand: { 500: '#7c3aed', 600: '#6d28d9' } },
+    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+  } } };
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+
+  <header class="border-b border-slate-900 sticky top-0 z-40 bg-slate-950/95 backdrop-blur">
+    <div class="mx-auto max-w-3xl px-4 sm:px-6 py-3 flex items-center justify-between">
+      <a href="/dashboard" class="flex items-center gap-2">
+        <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold">P</div>
+        <span class="font-bold">PlaySphere</span>
+      </a>
+      <a href="/dashboard" class="text-sm text-slate-400 hover:text-slate-100">← Back</a>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-10">
+    <h1 class="text-2xl sm:text-3xl font-black mb-1">⚙️ Settings</h1>
+    <p class="text-slate-400 text-sm mb-8">Control notifications and preferences</p>
+
+    <div id="msg" class="hidden mb-4 rounded-lg p-3 text-sm border"></div>
+
+    <!-- Notifications -->
+    <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="font-bold text-lg">🔔 Notifications</div>
+          <div class="text-xs text-slate-500">Get alerted when things happen</div>
+        </div>
+      </div>
+
+      <!-- Browser permission status -->
+      <div id="permBanner" class="rounded-xl border p-3 mb-4 flex items-center justify-between gap-3">
+        <div id="permText" class="text-sm">Checking browser permission…</div>
+        <button id="permBtn" class="hidden rounded-lg bg-brand-600 hover:bg-brand-700 px-3 py-2 text-xs font-bold whitespace-nowrap">
+          Enable
+        </button>
+      </div>
+
+            <div class="mb-4 rounded-xl border border-slate-700 bg-slate-800/40 p-3">
+        <label class="flex items-center justify-between gap-3 cursor-pointer">
+          <div>
+            <div class="font-bold text-sm">🔊 Sound effects</div>
+            <div class="text-xs text-slate-500">Dice rolls, moves, wins — in-game sounds</div>
+          </div>
+          <input type="checkbox" id="soundEnabled" class="w-6 h-6 accent-brand-500" />
+        </label>
+      </div>
+
+
+      <div class="space-y-3">
+        <label class="flex items-center justify-between gap-3 cursor-pointer p-3 rounded-lg hover:bg-slate-800/50">
+          <div>
+            <div class="font-bold text-sm">Master toggle</div>
+            <div class="text-xs text-slate-500">Turn all notifications on/off</div>
+          </div>
+          <input type="checkbox" id="enabled" class="w-6 h-6 accent-brand-500" />
+        </label>
+
+        <label class="flex items-center justify-between gap-3 cursor-pointer p-3 rounded-lg hover:bg-slate-800/50">
+          <div>
+            <div class="font-bold text-sm">⚔️ Challenges</div>
+            <div class="text-xs text-slate-500">When someone challenges you to a match</div>
+          </div>
+          <input type="checkbox" id="on_challenge" class="w-6 h-6 accent-brand-500" />
+        </label>
+
+        <label class="flex items-center justify-between gap-3 cursor-pointer p-3 rounded-lg hover:bg-slate-800/50">
+          <div>
+            <div class="font-bold text-sm">💬 Direct messages</div>
+            <div class="text-xs text-slate-500">When someone sends you a DM</div>
+          </div>
+          <input type="checkbox" id="on_dm" class="w-6 h-6 accent-brand-500" />
+        </label>
+
+        <label class="flex items-center justify-between gap-3 cursor-pointer p-3 rounded-lg hover:bg-slate-800/50">
+          <div>
+            <div class="font-bold text-sm">🤝 Friend requests</div>
+            <div class="text-xs text-slate-500">When someone adds you</div>
+          </div>
+          <input type="checkbox" id="on_friend" class="w-6 h-6 accent-brand-500" />
+        </label>
+
+        <label class="flex items-center justify-between gap-3 cursor-pointer p-3 rounded-lg hover:bg-slate-800/50">
+          <div>
+            <div class="font-bold text-sm">🏆 Tournament matches</div>
+            <div class="text-xs text-slate-500">When your next tournament match is ready</div>
+          </div>
+          <input type="checkbox" id="on_tournament" class="w-6 h-6 accent-brand-500" />
+        </label>
+
+        <label class="flex items-center justify-between gap-3 cursor-pointer p-3 rounded-lg hover:bg-slate-800/50">
+          <div>
+            <div class="font-bold text-sm">🏅 Achievements</div>
+            <div class="text-xs text-slate-500">When you unlock a new achievement</div>
+          </div>
+          <input type="checkbox" id="on_achievement" class="w-6 h-6 accent-brand-500" />
+        </label>
+      </div>
+
+      <button id="saveBtn" class="mt-5 w-full rounded-lg bg-brand-600 hover:bg-brand-700 px-4 py-3 text-sm font-bold transition">
+        Save Preferences
+      </button>
+    </section>
+
+    <!-- Account -->
+    <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <div class="font-bold text-lg mb-3">👤 Account</div>
+      <div class="space-y-2 text-sm">
+        <a href="/profile" class="block rounded-lg border border-slate-700 hover:bg-slate-800 px-4 py-3">Edit profile →</a>
+        <a href="/referral" class="block rounded-lg border border-slate-700 hover:bg-slate-800 px-4 py-3">Referral code →</a>
+        <button id="logoutBtn" class="w-full text-left rounded-lg border border-slate-700 hover:bg-slate-800 px-4 py-3 text-red-400">Log out</button>
+      </div>
+    </section>
+
+    <div class="mt-6 text-center text-xs text-slate-500">
+      <a href="/terms" class="hover:text-slate-300">Terms</a> ·
+      <a href="/privacy" class="hover:text-slate-300">Privacy</a> ·
+      <a href="/refund" class="hover:text-slate-300">Refund</a>
+    </div>
+  </main>
+
+  <script type="module" src="/static/js/settings.js"></script>
+</body>
+</html>

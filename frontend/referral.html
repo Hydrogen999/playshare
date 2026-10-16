@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Refer &amp; Earn · PlaySphere</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: { brand: { 400: '#a78bfa', 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6' } },
+      fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+    } },
+  };
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  @keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+  .pop { animation: pop 0.3s ease-out; }
+</style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+
+  <header class="border-b border-slate-900 sticky top-0 z-40 bg-slate-950/95 backdrop-blur">
+    <div class="mx-auto max-w-5xl px-3 sm:px-6 py-3 flex items-center justify-between">
+      <a href="/dashboard" class="flex items-center gap-2">
+        <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold">P</div>
+        <span class="font-bold hidden sm:inline">PlaySphere</span>
+      </a>
+      <a href="/dashboard" class="text-sm text-slate-400 hover:text-slate-100">← Back</a>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-3xl px-3 sm:px-6 py-6 sm:py-10">
+    <div class="text-center">
+      <div class="text-5xl mb-3">🎁</div>
+      <h1 class="text-3xl sm:text-4xl font-black">Refer &amp; Earn</h1>
+      <p class="text-slate-400 mt-2 text-sm sm:text-base">
+        Invite a friend → <span class="text-brand-400 font-bold">you both get 500 PlayCoins + XP</span>
+      </p>
+    </div>
+
+    <!-- Your code -->
+    <div class="mt-8 rounded-2xl border border-brand-500/40 bg-gradient-to-br from-brand-600/20 to-slate-900/60 p-5 sm:p-6">
+      <div class="text-[10px] sm:text-xs uppercase tracking-widest text-brand-400 font-bold mb-2">Your Referral Code</div>
+      <div id="myCode" class="text-3xl sm:text-4xl font-black tracking-widest text-center py-4 pop">– – – –</div>
+
+      <div class="grid grid-cols-2 gap-2 mt-4">
+        <button id="copyCodeBtn" class="rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-4 py-3 text-sm font-bold transition">
+          📋 Copy Code
+        </button>
+        <button id="copyLinkBtn" class="rounded-lg bg-gradient-to-r from-brand-600 to-fuchsia-600 hover:opacity-90 px-4 py-3 text-sm font-bold transition">
+          🔗 Copy Invite Link
+        </button>
+      </div>
+
+      <div id="copyMsg" class="hidden mt-3 text-center text-xs text-emerald-400"></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 gap-3 mt-4">
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-center">
+        <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-500">Friends Invited</div>
+        <div id="statTotal" class="text-2xl sm:text-3xl font-black text-brand-400 mt-1">0</div>
+      </div>
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-center">
+        <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-500">PlayCoins Earned</div>
+        <div id="statEarned" class="text-2xl sm:text-3xl font-black text-emerald-400 mt-1">0</div>
+      </div>
+    </div>
+
+    <!-- How it works -->
+    <div class="mt-8 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <div class="text-xs uppercase tracking-widest text-slate-500 mb-4">How it works</div>
+      <div class="space-y-3">
+        <div class="flex gap-3 items-start">
+          <div class="h-8 w-8 rounded-full bg-brand-500/20 border border-brand-500/40 grid place-items-center font-black text-brand-400 flex-shrink-0 text-sm">1</div>
+          <div class="text-sm">Copy your code or invite link above</div>
+        </div>
+        <div class="flex gap-3 items-start">
+          <div class="h-8 w-8 rounded-full bg-brand-500/20 border border-brand-500/40 grid place-items-center font-black text-brand-400 flex-shrink-0 text-sm">2</div>
+          <div class="text-sm">Send it to a friend on WhatsApp, TikTok, or anywhere</div>
+        </div>
+        <div class="flex gap-3 items-start">
+          <div class="h-8 w-8 rounded-full bg-brand-500/20 border border-brand-500/40 grid place-items-center font-black text-brand-400 flex-shrink-0 text-sm">3</div>
+          <div class="text-sm">They sign up with your code → <span class="text-brand-400 font-bold">you both get 500 PlayCoins instantly</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent referrals -->
+    <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <div class="text-xs uppercase tracking-widest text-slate-500 mb-3">Recent Referrals</div>
+      <div id="recentList" class="space-y-2">
+        <div class="text-xs text-slate-500 text-center py-4">No referrals yet — share your code!</div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="/static/js/referral.js"></script>
+</body>
+</html>
