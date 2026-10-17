@@ -138,12 +138,12 @@ function updateGameCard(slug) {
 }
 
 function showGameArea(slug) {
-  diceArea.classList.add("hidden");
-  ludoArea.classList.add("hidden");
-  chessArea.classList.add("hidden");
-  if (slug === "ludo") ludoArea.classList.remove("hidden");
-  else if (slug === "chess") chessArea.classList.remove("hidden");
-  else diceArea.classList.remove("hidden");
+  if (diceArea) diceArea.classList.add("hidden");
+  if (ludoArea) ludoArea.classList.add("hidden");
+  if (chessArea) chessArea.classList.add("hidden");
+  if (slug === "ludo" && ludoArea) ludoArea.classList.remove("hidden");
+  else if (slug === "chess" && chessArea) chessArea.classList.remove("hidden");
+  else if (diceArea) diceArea.classList.remove("hidden");
 }
 
 document.querySelectorAll(".game-card").forEach((btn) => {
@@ -153,7 +153,7 @@ document.querySelectorAll(".game-card").forEach((btn) => {
   });
 });
 
-// ---------- Dice helpers ----------
+// ---------- Members ----------
 function renderMembers() {
   const row = document.getElementById("playersRow");
   if (row) {
@@ -239,103 +239,117 @@ function escapeHTML(s) {
 }
 
 // ---------- Wager ----------
-wagerSlider.addEventListener("input", () => {
-  wagerValue.textContent = wagerSlider.value;
-});
-wagerSlider.addEventListener("change", () => {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  if (wagerLocked) return;
-  ws.send(JSON.stringify({ type: "room:set_wager", wager: Number(wagerSlider.value) }));
-});
+if (wagerSlider) {
+  wagerSlider.addEventListener("input", () => {
+    if (wagerValue) wagerValue.textContent = wagerSlider.value;
+  });
+  wagerSlider.addEventListener("change", () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (wagerLocked) return;
+    ws.send(JSON.stringify({ type: "room:set_wager", wager: Number(wagerSlider.value) }));
+  });
+}
 
 // ---------- Ready ----------
-readyBtn.addEventListener("click", () => {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  iAmReady = !iAmReady;
-  ws.send(JSON.stringify({ type: "room:ready", ready: iAmReady }));
-  readyBtn.textContent = iAmReady ? "Cancel Ready" : "I'm Ready";
-  readyBtn.className = iAmReady
-    ? "rounded-lg border border-slate-700 hover:bg-slate-800 px-6 py-3 text-sm font-bold transition whitespace-nowrap"
-    : "rounded-lg bg-brand-600 hover:bg-brand-700 px-6 py-3 text-sm font-bold transition whitespace-nowrap";
-});
+if (readyBtn) {
+  readyBtn.addEventListener("click", () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    iAmReady = !iAmReady;
+    ws.send(JSON.stringify({ type: "room:ready", ready: iAmReady }));
+    readyBtn.textContent = iAmReady ? "Cancel Ready" : "I'm Ready";
+    readyBtn.className = iAmReady
+      ? "rounded-lg border border-slate-700 hover:bg-slate-800 px-6 py-3 text-sm font-bold transition whitespace-nowrap"
+      : "rounded-lg bg-brand-600 hover:bg-brand-700 px-6 py-3 text-sm font-bold transition whitespace-nowrap";
+  });
+}
 
 // ---------- Chat form ----------
-chatForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const text = chatInput.value.trim();
-  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: "chat:send", content: text }));
-  chatInput.value = "";
-});
+if (chatForm) {
+  chatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: "chat:send", content: text }));
+    chatInput.value = "";
+  });
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- Dice animation ----------
 async function animateRoll(result) {
-async function animateRoll(result) {
   wagerLocked = true;
-  wagerSlider.disabled = true;
-  readyBtn.disabled = true;
-  readyBtn.classList.add("opacity-50", "cursor-not-allowed");
+  if (wagerSlider) wagerSlider.disabled = true;
+  if (readyBtn) {
+    readyBtn.disabled = true;
+    readyBtn.classList.add("opacity-50", "cursor-not-allowed");
+  }
   clearDice();
   setStatus("Rolling…", "purple");
-
   try { sfx.diceRoll(); } catch {}
 
   for (let i = 0; i < 12; i++) {
-    diceA.innerHTML = `<div class="die rolling">${DICE_FACES[1 + Math.floor(Math.random() * 6)]}</div>`;
+    if (diceA) diceA.innerHTML = `<div class="die rolling">${DICE_FACES[1 + Math.floor(Math.random() * 6)]}</div>`;
     try { sfx.diceTick(); } catch {}
     await sleep(50);
   }
-  try { sfx.diceLand(); } catch {}
-  diceA.innerHTML = `
+  if (diceA) diceA.innerHTML = `
     <div class="die">${DICE_FACES[result.roll_a.dice[0]]}</div>
     <div class="die">${DICE_FACES[result.roll_a.dice[1]]}</div>`;
-  totalA.textContent = result.roll_a.total;
+  if (totalA) totalA.textContent = result.roll_a.total;
+  try { sfx.diceLand(); } catch {}
 
   await sleep(200);
+  try { sfx.diceRoll(); } catch {}
 
-    try { sfx.diceRoll(); } catch {}
   for (let i = 0; i < 12; i++) {
-    diceB.innerHTML = `<div class="die rolling">${DICE_FACES[1 + Math.floor(Math.random() * 6)]}</div>`;
+    if (diceB) diceB.innerHTML = `<div class="die rolling">${DICE_FACES[1 + Math.floor(Math.random() * 6)]}</div>`;
     try { sfx.diceTick(); } catch {}
     await sleep(50);
   }
-  try { sfx.diceLand(); } catch {}
-  diceB.innerHTML = `
+  if (diceB) diceB.innerHTML = `
     <div class="die">${DICE_FACES[result.roll_b.dice[0]]}</div>
     <div class="die">${DICE_FACES[result.roll_b.dice[1]]}</div>`;
-  totalB.textContent = result.roll_b.total;
+  if (totalB) totalB.textContent = result.roll_b.total;
+  try { sfx.diceLand(); } catch {}
 
   await sleep(300);
 
-    if (result.winner_id === null) {
+  if (result.winner_id === null) {
     setStatus("Draw — refunded");
-    winnerBanner.textContent = "🤝 DRAW";
-    winnerBanner.className = "mt-4 sm:mt-6 text-center text-2xl sm:text-3xl font-extrabold pop text-slate-300";
+    if (winnerBanner) {
+      winnerBanner.textContent = "🤝 DRAW";
+      winnerBanner.className = "mt-4 sm:mt-6 text-center text-2xl sm:text-3xl font-extrabold pop text-slate-300";
+    }
     try { sfx.draw(); } catch {}
   } else if (result.winner_id === myId) {
     setStatus("You won!", "green");
-    winnerBanner.textContent = `🏆 YOU WON ${result.pot} PC!`;
-    winnerBanner.className = "mt-4 sm:mt-6 text-center text-2xl sm:text-3xl font-extrabold pop text-emerald-400";
+    if (winnerBanner) {
+      winnerBanner.textContent = `🏆 YOU WON ${result.pot} PC!`;
+      winnerBanner.className = "mt-4 sm:mt-6 text-center text-2xl sm:text-3xl font-extrabold pop text-emerald-400";
+    }
     try { sfx.win(); } catch {}
   } else {
     setStatus("You lost", "red");
-    winnerBanner.textContent = `You lost ${result.wager} PC`;
-    winnerBanner.className = "mt-4 sm:mt-6 text-center text-2xl sm:text-3xl font-extrabold pop text-red-400";
+    if (winnerBanner) {
+      winnerBanner.textContent = `You lost ${result.wager} PC`;
+      winnerBanner.className = "mt-4 sm:mt-6 text-center text-2xl sm:text-3xl font-extrabold pop text-red-400";
+    }
     try { sfx.lose(); } catch {}
   }
-  winnerBanner.classList.remove("hidden");
+  if (winnerBanner) winnerBanner.classList.remove("hidden");
 
-  readyBtn.textContent = "Play Again";
-  readyBtn.disabled = false;
-  readyBtn.classList.remove("opacity-50", "cursor-not-allowed");
+  if (readyBtn) {
+    readyBtn.textContent = "Play Again";
+    readyBtn.disabled = false;
+    readyBtn.classList.remove("opacity-50", "cursor-not-allowed");
+  }
   iAmReady = false;
   wagerLocked = false;
-  wagerSlider.disabled = false;
+  if (wagerSlider) wagerSlider.disabled = false;
 }
 
-// ---------- Ludo board ----------
+// ---------- Boards ----------
 function ensureLudoBoard() {
   if (ludoBoard) return ludoBoard;
   ludoBoard = new LudoBoard(ludoContainer);
@@ -353,7 +367,6 @@ function ensureLudoBoard() {
   return ludoBoard;
 }
 
-// ---------- Chess board ----------
 function ensureChessBoard() {
   if (chessBoard) return chessBoard;
   chessBoard = new ChessBoard(chessContainer);
@@ -385,13 +398,10 @@ async function boot() {
     return;
   }
 
-
-    // Unlock audio on any user interaction
   const unlockOnce = () => { try { unlockAudio(); } catch {} };
   window.addEventListener("click", unlockOnce, { once: true });
   window.addEventListener("touchstart", unlockOnce, { once: true });
   window.addEventListener("keydown", unlockOnce, { once: true });
-
 
   document.body.classList.remove("chat-open");
 
@@ -399,7 +409,7 @@ async function boot() {
   const url = `${proto}//${location.host}/ws/room/${encodeURIComponent(roomId)}?token=${encodeURIComponent(token)}`;
   ws = new WebSocket(url);
 
-  ws.addEventListener("open", () => { chatStatus.textContent = "● connected"; });
+  ws.addEventListener("open", () => { if (chatStatus) chatStatus.textContent = "● connected"; });
 
   ws.addEventListener("message", (ev) => {
     let msg;
@@ -412,24 +422,22 @@ async function boot() {
         for (const m of msg.messages) addMessage(m);
         if (msg.match) {
           currentMatch = msg.match;
-          wagerSlider.value = msg.match.wager;
-          wagerValue.textContent = msg.match.wager;
+          if (wagerSlider) wagerSlider.value = msg.match.wager;
+          if (wagerValue) wagerValue.textContent = msg.match.wager;
         }
         updateGameCard(msg.room.game_slug || "dice");
         if (msg.room) renderRoomCodeBanner(msg.room);
 
         if (msg.match && msg.match.game_slug === "ludo" && msg.ludo_state) {
-          selectorPanel.classList.add("hidden");
+          if (selectorPanel) selectorPanel.classList.add("hidden");
           const board = ensureLudoBoard();
           board.update(msg.ludo_state);
         }
         if (msg.match && msg.match.game_slug === "chess" && msg.chess_state) {
-          selectorPanel.classList.add("hidden");
+          if (selectorPanel) selectorPanel.classList.add("hidden");
           const board = ensureChessBoard();
           board.setIdentity(myId, msg.chess_state.white_id, msg.chess_state.black_id);
-          if (msg.chess_state.board) {
-            board.update(msg.chess_state.board);
-          }
+          if (msg.chess_state.board) board.update(msg.chess_state.board);
           const hist = msg.chess_state.moves || [];
           if (hist.length > 0) board.setLastMove(hist[hist.length - 1]);
         }
@@ -452,8 +460,8 @@ async function boot() {
 
       case "room:wager_update":
         currentMatch = msg.match;
-        wagerSlider.value = msg.match.wager;
-        wagerValue.textContent = msg.match.wager;
+        if (wagerSlider) wagerSlider.value = msg.match.wager;
+        if (wagerValue) wagerValue.textContent = msg.match.wager;
         break;
 
       case "room:game_update": updateGameCard(msg.game_slug); break;
@@ -462,17 +470,17 @@ async function boot() {
 
       case "match:error":
         setStatus("Error: " + msg.error, "red");
-        readyBtn.disabled = false;
-        readyBtn.classList.remove("opacity-50", "cursor-not-allowed");
+        if (readyBtn) {
+          readyBtn.disabled = false;
+          readyBtn.classList.remove("opacity-50", "cursor-not-allowed");
+        }
         break;
 
-      // ---------- LUDO ----------
       case "ludo:start": {
-        selectorPanel.classList.add("hidden");
+        if (selectorPanel) selectorPanel.classList.add("hidden");
         currentMatch = { id: msg.match_id, game_slug: "ludo", wager: msg.wager };
-        wagerSlider.value = msg.wager;
-        wagerValue.textContent = msg.wager;
-        wagerSlider.disabled = true;
+        if (wagerSlider) { wagerSlider.value = msg.wager; wagerSlider.disabled = true; }
+        if (wagerValue) wagerValue.textContent = msg.wager;
         const board = ensureLudoBoard();
         board.handleStart(msg.state);
         break;
@@ -480,47 +488,29 @@ async function boot() {
 
       case "ludo:rolled": {
         const board = ensureLudoBoard();
-        board.handleRoll({
-          userId: msg.user_id,
-          roll: msg.roll,
-          legalMoves: msg.legal_moves || [],
-          state: msg.state,
-        });
+        board.handleRoll({ userId: msg.user_id, roll: msg.roll, legalMoves: msg.legal_moves || [], state: msg.state });
         break;
       }
 
       case "ludo:moved": {
         const board = ensureLudoBoard();
-        board.handleMove({
-          userId: msg.user_id,
-          tokenIndex: msg.token_index,
-          captured: msg.captured || [],
-          enteredHome: msg.entered_home,
-          extraTurn: msg.extra_turn,
-          state: msg.state,
-        });
+        board.handleMove({ userId: msg.user_id, tokenIndex: msg.token_index, captured: msg.captured || [], enteredHome: msg.entered_home, extraTurn: msg.extra_turn, state: msg.state });
         break;
       }
 
       case "ludo:end": {
         const board = ensureLudoBoard();
-        board.handleEnd({
-          winnerId: msg.winner_user_id,
-          wager: msg.wager,
-          pot: msg.pot,
-        });
-
-                try {
-          if (msg.winner_user_id === myId) sfx.win();
-          else sfx.lose();
-        } catch {}
+        board.handleEnd({ winnerId: msg.winner_user_id, wager: msg.wager, pot: msg.pot });
+        try { if (msg.winner_user_id === myId) sfx.win(); else sfx.lose(); } catch {}
         iAmReady = false;
-        readyBtn.textContent = "I'm Ready";
-        readyBtn.disabled = false;
-        readyBtn.classList.remove("opacity-50", "cursor-not-allowed");
-        wagerSlider.disabled = false;
+        if (readyBtn) {
+          readyBtn.textContent = "I'm Ready";
+          readyBtn.disabled = false;
+          readyBtn.classList.remove("opacity-50", "cursor-not-allowed");
+        }
+        if (wagerSlider) wagerSlider.disabled = false;
         setTimeout(() => {
-          selectorPanel.classList.remove("hidden");
+          if (selectorPanel) selectorPanel.classList.remove("hidden");
           if (ludoContainer) ludoContainer.innerHTML = "";
           ludoBoard = null;
         }, 5000);
@@ -533,13 +523,11 @@ async function boot() {
         break;
       }
 
-      // ---------- CHESS ----------
       case "chess:start": {
-        selectorPanel.classList.add("hidden");
+        if (selectorPanel) selectorPanel.classList.add("hidden");
         currentMatch = { id: msg.match_id, game_slug: "chess", wager: msg.wager };
-        wagerSlider.value = msg.wager;
-        wagerValue.textContent = msg.wager;
-        wagerSlider.disabled = true;
+        if (wagerSlider) { wagerSlider.value = msg.wager; wagerSlider.disabled = true; }
+        if (wagerValue) wagerValue.textContent = msg.wager;
         const board = ensureChessBoard();
         board.setIdentity(myId, msg.white_id, msg.black_id);
         board.update(msg.board);
@@ -550,40 +538,30 @@ async function boot() {
       case "chess:moved": {
         const board = ensureChessBoard();
         board.setLastMove(msg.uci);
-        // Sound only if it's the OPPONENT's move (we already played local sound)
-        if (msg.user_id !== myId) {
-          try { board.playOpponentMoveSound(false); } catch {}
-        }
+        if (msg.user_id !== myId) { try { board.playOpponentMoveSound(false); } catch {} }
         board.update(msg.board);
-        // Check alert
-        if (msg.board && msg.board.in_check) {
-          try { board.playCheckSound(); } catch {}
-        }
+        if (msg.board && msg.board.in_check) { try { board.playCheckSound(); } catch {} }
         break;
       }
 
-            case "chess:end": {
+      case "chess:end": {
         const board = ensureChessBoard();
-        if (board.state) {
-          board.state.result = msg.result;
-          board.update(board.state);
-        }
-        board.showMessage(
-          msg.result === "draw" ? "🤝 Draw" : (msg.winner_id === myId ? "🏆 You won!" : "You lost"),
-          msg.winner_id === myId ? "success" : "error"
-        );
+        if (board.state) { board.state.result = msg.result; board.update(board.state); }
+        board.showMessage(msg.result === "draw" ? "🤝 Draw" : (msg.winner_id === myId ? "🏆 You won!" : "You lost"), msg.winner_id === myId ? "success" : "error");
         try {
           if (msg.result === "draw") sfx.draw();
           else if (msg.winner_id === myId) sfx.win();
           else sfx.lose();
         } catch {}
         iAmReady = false;
-        readyBtn.textContent = "I'm Ready";
-        readyBtn.disabled = false;
-        readyBtn.classList.remove("opacity-50", "cursor-not-allowed");
-        wagerSlider.disabled = false;
+        if (readyBtn) {
+          readyBtn.textContent = "I'm Ready";
+          readyBtn.disabled = false;
+          readyBtn.classList.remove("opacity-50", "cursor-not-allowed");
+        }
+        if (wagerSlider) wagerSlider.disabled = false;
         setTimeout(() => {
-          selectorPanel.classList.remove("hidden");
+          if (selectorPanel) selectorPanel.classList.remove("hidden");
           if (chessContainer) chessContainer.innerHTML = "";
           chessBoard = null;
         }, 5000);
@@ -598,7 +576,7 @@ async function boot() {
     }
   });
 
-  ws.addEventListener("close", () => { chatStatus.textContent = "● disconnected"; });
+  ws.addEventListener("close", () => { if (chatStatus) chatStatus.textContent = "● disconnected"; });
 }
 
 document.body.classList.remove("chat-open");
