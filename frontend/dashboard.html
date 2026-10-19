@@ -19,12 +19,17 @@
   @keyframes levelPop { 0% { transform: scale(1); } 50% { transform: scale(1.25); } 100% { transform: scale(1); } }
   .level-badge.pop { animation: levelPop 0.6s ease-out; }
   .xp-fill { animation: xpFill 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
+  
+  /* Add padding to bottom on mobile so the nav bar doesn't cover content */
+  @media (max-width: 767px) {
+    body { padding-bottom: 80px; }
+  }
 </style>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
 
-  <!-- HEADER -->
-  <header class="border-b border-slate-900 sticky top-0 z-40 bg-slate-950/95 backdrop-blur">
+  <!-- DESKTOP HEADER (Hidden on Mobile) -->
+  <header class="hidden md:block border-b border-slate-900 sticky top-0 z-40 bg-slate-950/95 backdrop-blur">
     <div class="mx-auto max-w-6xl px-4 sm:px-6 py-3 flex items-center justify-between">
       <a href="/dashboard" class="flex items-center gap-2">
         <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold shadow-lg shadow-brand-500/20">P</div>
@@ -35,9 +40,26 @@
           🔔
           <span id="notifBadge" class="hidden absolute -top-1 -right-2 px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[9px] font-bold"></span>
         </a>
-        <a href="/friends" class="hover:text-white transition hidden sm:inline">👥 Friends</a>
+        <a href="/friends" class="hover:text-white transition">👥 Friends</a>
         <a href="/settings" class="hover:text-white transition">⚙️ Settings</a>
         <button id="logoutBtn" class="text-red-400 hover:text-red-300 transition ml-1">Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MOBILE HEADER (Minimal) -->
+  <header class="md:hidden border-b border-slate-900 sticky top-0 z-40 bg-slate-950/95 backdrop-blur">
+    <div class="px-4 py-3 flex items-center justify-between">
+      <a href="/dashboard" class="flex items-center gap-2">
+        <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold shadow-lg shadow-brand-500/20">P</div>
+        <span class="font-bold">PlaySphere</span>
+      </a>
+      <div class="flex items-center gap-4">
+        <a href="/notifications" class="relative text-slate-400 hover:text-white">
+          🔔
+          <span id="notifBadgeMobile" class="hidden absolute -top-1 -right-2 px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[9px] font-bold"></span>
+        </a>
+        <button id="logoutBtnMobile" class="text-red-400 hover:text-red-300">Log out</button>
       </div>
     </div>
   </header>
@@ -174,11 +196,39 @@
 
   </main>
 
+  <!-- MOBILE BOTTOM NAVIGATION BAR -->
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur border-t border-slate-800 pb-safe">
+    <div class="flex items-center justify-around h-16">
+      <a href="/dashboard" class="flex flex-col items-center gap-1 text-brand-500">
+        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+        <span class="text-[10px] font-bold">Home</span>
+      </a>
+      <a href="/lobby" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 transition">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+        <span class="text-[10px] font-bold">Lobby</span>
+      </a>
+      <a href="/friends" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 transition">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+        <span class="text-[10px] font-bold">Friends</span>
+      </a>
+      <a href="/settings" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 transition">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+        <span class="text-[10px] font-bold">Profile</span>
+      </a>
+    </div>
+  </nav>
+
   <script type="module" src="/static/js/dashboard.js"></script>
   <script type="module">
     import { renderBanner, renderRewarded } from "/static/js/ads.js";
     renderBanner("bannerSlot");
     renderRewarded("rewardedSlot");
+
+    // Mobile Logout
+    document.getElementById("logoutBtnMobile")?.addEventListener("click", () => {
+      localStorage.removeItem("ps_token");
+      window.location.href = "/";
+    });
   </script>
 </body>
 </html>
