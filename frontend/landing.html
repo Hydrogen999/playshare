@@ -3,306 +3,298 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>PlaySphere — Meet players. Chat. Challenge. Win.</title>
-<meta name="description" content="Africa's home for Ludo, dice, tournaments and social gaming. Free forever. Play for PlayCoins." />
+<title>PlaySphere — Enter the Arena</title>
+<meta name="description" content="The ultimate cyber-social gaming arena. Play Chess, Ludo, and more." />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
     theme: { extend: {
-      colors: { brand: { 400: '#a78bfa', 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6' } },
-      fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+      colors: { brand: { 400: '#a78bfa', 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6' }, cyber: { cyan: '#06b6d4', pink: '#ec4899', purple: '#a855f7' } },
+      fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'], display: ['Orbitron', 'sans-serif'] },
     } },
   };
 </script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
 <style>
-  /* Animated gradient for the hero name */
-  @keyframes gradientShift {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
+  body {
+    background-color: #02000a;
+    color: #e2e8f0;
+    overflow-x: hidden;
   }
-  .hero-name {
-    background: linear-gradient(90deg, #a855f7, #ec4899, #f59e0b, #a855f7);
-    background-size: 300% 300%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    animation: gradientShift 6s ease infinite;
-    filter: drop-shadow(0 0 30px rgba(168, 85, 247, 0.6));
+
+  /* 3D Moving Cyber Grid */
+  .cyber-grid {
+    position: fixed;
+    bottom: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background-image: 
+      linear-gradient(to right, rgba(168, 85, 247, 0.15) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(168, 85, 247, 0.15) 1px, transparent 1px);
+    background-size: 60px 60px;
+    transform: perspective(600px) rotateX(65deg);
+    animation: gridMove 8s linear infinite;
+    z-index: 0;
+    pointer-events: none;
   }
-  .glow-purple {
-    box-shadow: 0 0 60px rgba(168, 85, 247, 0.4), 0 0 120px rgba(168, 85, 247, 0.2);
+
+  @keyframes gridMove {
+    0% { background-position: 0 0; }
+    100% { background-position: 0 60px; }
   }
-  @keyframes float {
-    0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-12px); }
+
+  /* Neon Glowing Text */
+  .neon-text {
+    text-shadow: 0 0 10px rgba(168, 85, 247, 0.8), 0 0 20px rgba(168, 85, 247, 0.4), 0 0 40px rgba(168, 85, 247, 0.2);
   }
-  .float-1 { animation: float 3s ease-in-out infinite; }
-  .float-2 { animation: float 3s ease-in-out infinite 0.5s; }
-  .float-3 { animation: float 3s ease-in-out infinite 1s; }
-  @keyframes pulse-ring {
-    0% { transform: scale(1); opacity: 0.6; }
-    100% { transform: scale(1.5); opacity: 0; }
+  .neon-text-cyan {
+    text-shadow: 0 0 10px rgba(6, 182, 212, 0.8), 0 0 20px rgba(6, 182, 212, 0.4);
   }
-  .pulse-ring { animation: pulse-ring 2s ease-out infinite; }
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+
+  /* 3D Holographic HUD Cards */
+  .hud-card {
+    position: relative;
+    background: rgba(5, 5, 15, 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(168, 85, 247, 0.3);
+    box-shadow: 0 0 30px rgba(168, 85, 247, 0.1), inset 0 0 20px rgba(168, 85, 247, 0.05);
+    transform-style: preserve-3d;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
   }
-  .fade-up { animation: fadeUp 0.8s ease-out backwards; }
-  .fade-up-1 { animation-delay: 0.1s; }
-  .fade-up-2 { animation-delay: 0.3s; }
-  .fade-up-3 { animation-delay: 0.5s; }
-  .fade-up-4 { animation-delay: 0.7s; }
-  .fade-up-5 { animation-delay: 0.9s; }
+  .hud-card:hover {
+    border-color: rgba(168, 85, 247, 0.8);
+    box-shadow: 0 0 40px rgba(168, 85, 247, 0.3), inset 0 0 30px rgba(168, 85, 247, 0.1);
+  }
+
+  /* Pop-out 3D elements inside the card */
+  .pop-out {
+    transform: translateZ(40px);
+    transition: transform 0.3s ease;
+  }
+  .pop-out-icon {
+    transform: translateZ(60px);
+    transition: transform 0.3s ease;
+  }
+
+  /* HUD Corner Brackets */
+  .hud-card::before, .hud-card::after {
+    content: ''; position: absolute; width: 20px; height: 20px; pointer-events: none; transition: all 0.3s ease;
+  }
+  .hud-card::before {
+    top: -1px; left: -1px; border-top: 2px solid #a855f7; border-left: 2px solid #a855f7;
+  }
+  .hud-card::after {
+    bottom: -1px; right: -1px; border-bottom: 2px solid #a855f7; border-right: 2px solid #a855f7;
+  }
+  .hud-card:hover::before, .hud-card:hover::after {
+    width: 40px; height: 40px; border-color: #06b6d4;
+  }
+
+  /* Scanning Line */
+  .scanline {
+    position: absolute; top: 0; left: 0; width: 100%; height: 2px;
+    background: rgba(6, 182, 212, 0.5);
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.8);
+    animation: scan 4s linear infinite;
+    opacity: 0.3;
+  }
+  @keyframes scan {
+    0% { top: 0; }
+    50% { top: 100%; }
+    100% { top: 0; }
+  }
+
+  /* Glowing Button */
+  .btn-cyber {
+    position: relative;
+    background: transparent;
+    color: #fff;
+    border: 2px solid #a855f7;
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.4), inset 0 0 15px rgba(168, 85, 247, 0.2);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    transition: all 0.3s;
+  }
+  .btn-cyber:hover {
+    background: #a855f7;
+    box-shadow: 0 0 30px rgba(168, 85, 247, 0.8), inset 0 0 20px rgba(168, 85, 247, 0.4);
+    text-shadow: 0 0 5px #fff;
+  }
+  
+  /* Primary Cyan Button */
+  .btn-cyber-cyan {
+    border-color: #06b6d4;
+    box-shadow: 0 0 15px rgba(6, 182, 212, 0.4), inset 0 0 15px rgba(6, 182, 212, 0.2);
+  }
+  .btn-cyber-cyan:hover {
+    background: #06b6d4;
+    box-shadow: 0 0 30px rgba(6, 182, 212, 0.8), inset 0 0 20px rgba(6, 182, 212, 0.4);
+    color: #000;
+  }
+
+  .glitch-hover:hover {
+    animation: glitch 0.3s linear infinite;
+  }
+  @keyframes glitch {
+    2%, 64% { transform: translate(2px,0) skew(0deg); }
+    4%, 60% { transform: translate(-2px,0) skew(0deg); }
+    62% { transform: translate(0,0) skew(5deg); }
+  }
 </style>
 </head>
-<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased overflow-x-hidden">
+<body class="min-h-screen font-sans relative overflow-hidden">
 
-  <!-- Animated background -->
-  <div class="pointer-events-none fixed inset-0 overflow-hidden">
-    <div class="absolute -top-40 -left-40 h-[500px] w-[500px] rounded-full bg-purple-700/30 blur-3xl"></div>
-    <div class="absolute -bottom-40 -right-40 h-[500px] w-[500px] rounded-full bg-fuchsia-700/20 blur-3xl"></div>
-    <div class="absolute top-1/3 left-1/2 h-[400px] w-[400px] rounded-full bg-amber-500/10 blur-3xl"></div>
-  </div>
+  <div class="cyber-grid"></div>
 
-  <div class="relative">
+  <!-- Ambient Background Glows -->
+  <div class="fixed top-0 left-1/4 w-96 h-96 bg-cyber-purple/20 rounded-full blur-[120px] pointer-events-none z-0"></div>
+  <div class="fixed bottom-0 right-1/4 w-96 h-96 bg-cyber-cyan/20 rounded-full blur-[120px] pointer-events-none z-0"></div>
 
-    <!-- Header -->
-    <header class="mx-auto max-w-6xl px-4 sm:px-6 py-5 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-brand-500 to-fuchsia-500 grid place-items-center font-black text-lg glow-purple">P</div>
-        <span class="text-xl font-black tracking-tight">PlaySphere</span>
+  <!-- HEADER -->
+  <header class="relative z-10 mx-auto max-w-7xl px-6 py-6 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="h-10 w-10 border-2 border-cyber-cyan rounded flex items-center justify-center relative overflow-hidden group">
+        <div class="absolute inset-0 bg-cyber-cyan/20 translate-y-full group-hover:translate-y-0 transition"></div>
+        <span class="font-display font-black text-xl text-white neon-text-cyan z-10">P</span>
       </div>
-      <div class="flex items-center gap-2 sm:gap-3">
-        <a href="/login" class="text-sm font-semibold text-slate-300 hover:text-white px-3 py-2">Log in</a>
-        <a href="/login" class="text-sm font-bold bg-gradient-to-r from-brand-500 to-fuchsia-500 hover:opacity-90 transition px-4 py-2.5 rounded-lg">Sign Up Free</a>
-      </div>
-    </header>
+      <span class="text-xl font-display font-bold tracking-widest uppercase text-white">PlaySphere</span>
+    </div>
+    <div class="flex items-center gap-6">
+      <a href="login" class="text-sm font-display font-bold tracking-widest uppercase text-slate-400 hover:text-white transition">Log In</a>
+      <a href="login" class="text-sm font-display font-bold tracking-widest uppercase text-cyber-cyan border-b-2 border-cyber-cyan pb-1 hover:neon-text-cyan transition">Sign Up</a>
+    </div>
+  </header>
 
-    <!-- HERO -->
-    <section class="mx-auto max-w-6xl px-4 sm:px-6 pt-8 sm:pt-16 pb-12 text-center">
-      <div class="inline-block fade-up fade-up-1">
-        <span class="text-[10px] sm:text-xs font-bold uppercase tracking-widest bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-purple-300 px-4 py-1.5 rounded-full">
-          🔥 Now Live · Free Forever
-        </span>
-      </div>
+  <!-- HERO SECTION -->
+  <section class="relative z-10 mx-auto max-w-7xl px-6 pt-24 pb-32 flex flex-col items-center text-center">
+    
+    <div class="inline-flex items-center gap-3 px-4 py-2 border border-cyber-purple/50 bg-cyber-purple/10 backdrop-blur-md mb-8">
+      <span class="h-2 w-2 rounded-full bg-cyber-cyan animate-ping"></span>
+      <span class="text-xs font-display font-bold text-cyber-cyan tracking-widest uppercase">System Online · Players Connected</span>
+    </div>
 
-      <h1 class="mt-6 text-6xl sm:text-7xl md:text-8xl font-black tracking-tighter fade-up fade-up-2">
-        <span class="hero-name">PlaySphere</span>
-      </h1>
+    <h1 class="text-5xl sm:text-7xl md:text-8xl font-display font-black tracking-tighter mb-6 max-w-5xl leading-none">
+      <span class="block text-white mb-2">ENTER THE</span>
+      <span class="block text-transparent bg-clip-text bg-gradient-to-r from-cyber-purple via-cyber-pink to-cyber-cyan neon-text glitch-hover">SPHERE</span>
+    </h1>
 
-      <p class="mt-4 sm:mt-6 text-lg sm:text-2xl text-slate-300 font-semibold max-w-3xl mx-auto leading-tight fade-up fade-up-3">
-        Meet players. Chat. Challenge. Win.
-      </p>
-      <p class="mt-3 text-sm sm:text-base text-slate-400 max-w-2xl mx-auto fade-up fade-up-4">
-        Africa's home for <span class="text-purple-400 font-bold">Ludo</span>,
-        <span class="text-pink-400 font-bold">dice games</span>, and real-time
-        <span class="text-amber-400 font-bold">social gaming</span>.
-        Play for free. Compete for PlayCoins. Win real rewards.
-      </p>
+    <p class="text-base sm:text-lg text-slate-400 max-w-2xl mx-auto mb-12 font-medium leading-relaxed">
+      The ultimate social gaming arena. Compete in real-time Chess and Ludo, climb the global ranks, and build your virtual empire.
+    </p>
 
-      <!-- CTA buttons -->
-      <div class="mt-8 sm:mt-10 flex flex-col sm:flex-row gap-3 justify-center items-center fade-up fade-up-5">
-        <a href="/login" class="w-full sm:w-auto text-center text-base font-black bg-gradient-to-r from-brand-500 to-fuchsia-500 hover:opacity-90 transition px-8 py-4 rounded-xl glow-purple">
-          🎮 Start Playing Free
-        </a>
-        <a href="/login" class="w-full sm:w-auto text-center text-base font-bold border border-slate-700 hover:bg-slate-800 transition px-8 py-4 rounded-xl">
-          Already have an account?
-        </a>
-      </div>
+    <div class="flex flex-col sm:flex-row gap-6 justify-center w-full sm:w-auto">
+      <a href="login" class="w-full sm:w-auto text-center text-sm font-display font-bold btn-cyber-cyan px-10 py-4">
+        Initialize Player
+      </a>
+      <a href="login" class="w-full sm:w-auto text-center text-sm font-display font-bold btn-cyber px-10 py-4">
+        Access Terminal
+      </a>
+    </div>
 
-      <!-- Live stats -->
-      <div class="mt-8 flex items-center justify-center gap-2 text-sm text-slate-400 fade-up fade-up-5">
-        <span class="h-2 w-2 rounded-full bg-emerald-400 relative">
-          <span class="absolute inset-0 rounded-full bg-emerald-400 pulse-ring"></span>
-        </span>
-        <span id="onlineCount" class="font-bold text-emerald-400">…</span>
-        <span>players online right now</span>
-      </div>
-    </section>
+  </section>
 
-    <!-- HERO VISUAL -->
-    <section class="mx-auto max-w-6xl px-4 sm:px-6 pb-16 sm:pb-24">
-      <div class="relative max-w-3xl mx-auto">
+  <!-- 3D HUD MODULES (Showcase) -->
+  <section class="relative z-10 mx-auto max-w-6xl px-6 pb-32 perspective-1000">
+    <div class="grid md:grid-cols-2 gap-8">
 
-        <!-- Floating avatars around the visual -->
-        <div class="absolute -top-6 -left-4 sm:-left-12 float-1">
-          <div class="rounded-full bg-orange-500 grid place-items-center text-3xl sm:text-5xl w-16 h-16 sm:w-24 sm:h-24 shadow-2xl ring-4 ring-purple-500/40">🦊</div>
-          <div class="absolute -top-2 -right-2 text-xl">👑</div>
+      <!-- CHESS MODULE -->
+      <div class="hud-card p-8 group tilt-card">
+        <div class="scanline"></div>
+        
+        <div class="flex items-center justify-between mb-8 pop-out">
+          <div class="text-5xl drop-shadow-[0_10px_15px_rgba(6,182,212,0.4)] pop-out-icon">♟️</div>
+          <div class="text-xs font-display font-bold text-cyber-cyan border border-cyber-cyan px-3 py-1 uppercase tracking-widest bg-cyber-cyan/10">Tactical</div>
         </div>
-        <div class="absolute -top-2 -right-4 sm:-right-12 float-2">
-          <div class="rounded-full bg-yellow-500 grid place-items-center text-3xl sm:text-5xl w-16 h-16 sm:w-24 sm:h-24 shadow-2xl ring-4 ring-amber-500/40">🐯</div>
-        </div>
-        <div class="absolute -bottom-6 -left-8 sm:-left-16 float-3">
-          <div class="rounded-full bg-pink-500 grid place-items-center text-3xl sm:text-5xl w-16 h-16 sm:w-24 sm:h-24 shadow-2xl ring-4 ring-pink-500/40">🐙</div>
-          <div class="absolute -top-2 -right-2 text-xl">👑</div>
-        </div>
-        <div class="absolute -bottom-4 -right-6 sm:-right-14 float-1">
-          <div class="rounded-full bg-green-500 grid place-items-center text-3xl sm:text-5xl w-16 h-16 sm:w-24 sm:h-24 shadow-2xl ring-4 ring-emerald-500/40">🐸</div>
-        </div>
+        
+        <h3 class="text-3xl font-display font-black mb-3 text-white pop-out">Chess</h3>
+        <p class="text-sm text-slate-400 mb-8 font-medium pop-out">Engage in ranked matches. Master the board. Unlock holographic skins based on your Elo tier.</p>
 
-        <!-- The Ludo board -->
-        <div class="rounded-3xl border-2 border-purple-500/30 bg-slate-900/60 backdrop-blur p-4 sm:p-6 glow-purple">
-          <div class="grid grid-cols-15 gap-0 rounded-xl overflow-hidden" style="grid-template-columns: repeat(15, minmax(0, 1fr)); aspect-ratio: 1/1;">
-            <!-- We'll draw a mini Ludo board with CSS -->
-            <div class="bg-red-500 col-span-5 row-span-5"></div>
-            <div class="bg-slate-100 col-span-5 row-span-1"></div>
-            <div class="bg-green-500 col-span-5 row-span-5"></div>
-            <div class="bg-slate-100 col-span-1 row-span-4"></div>
-            <div class="bg-green-500 row-span-4"></div>
-            <div class="bg-slate-100 col-span-1 row-span-4"></div>
-            <div class="bg-red-500 col-span-5 row-span-5"></div>
-            <div class="bg-slate-100 col-span-5 row-span-1"></div>
-            <div class="bg-yellow-500 col-span-5 row-span-5"></div>
+        <!-- Holographic Data Bar -->
+        <div class="border border-slate-700/50 bg-slate-900/50 p-4 mb-8 pop-out" style="transform: translateZ(30px);">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[10px] font-display text-slate-400 uppercase tracking-widest">Current Rating</span>
+            <span class="text-sm font-display font-bold text-cyber-cyan">1200 ELO</span>
+          </div>
+          <div class="h-1.5 bg-slate-800 overflow-hidden">
+            <div class="h-full bg-gradient-to-r from-cyber-cyan to-cyber-purple w-1/3 shadow-[0_0_10px_#06b6d4]"></div>
           </div>
         </div>
 
-        <!-- Floating dice -->
-        <div class="absolute -top-8 right-1/4 float-2 text-5xl sm:text-6xl drop-shadow-2xl">🎲</div>
-        <div class="absolute -bottom-8 left-1/4 float-3 text-5xl sm:text-6xl drop-shadow-2xl">🎯</div>
-      </div>
-    </section>
-
-    <!-- FEATURES -->
-    <section class="mx-auto max-w-6xl px-4 sm:px-6 pb-16 sm:pb-24">
-      <div class="text-center mb-10 sm:mb-14">
-        <div class="text-xs uppercase tracking-widest text-purple-400 font-bold">Why PlaySphere?</div>
-        <h2 class="mt-3 text-3xl sm:text-5xl font-black">Built for <span class="text-purple-400">real players</span></h2>
+        <a href="/login" class="block text-center w-full border border-slate-700 hover:border-cyber-cyan py-3 text-xs font-display font-bold uppercase tracking-widest transition pop-out" style="transform: translateZ(20px);">Deploy to Board</a>
       </div>
 
-      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 hover:border-purple-500/50 transition">
-          <div class="text-4xl mb-3">🎯</div>
-          <div class="font-black text-lg">Ludo &amp; Dice</div>
-          <div class="text-sm text-slate-400 mt-2">Classic Ludo with real rules. Fast dice games. More coming soon — Chess, Checkers, and beyond.</div>
+      <!-- LUDO MODULE -->
+      <div class="hud-card p-8 group tilt-card">
+        <div class="scanline" style="animation-delay: 2s;"></div>
+        
+        <div class="flex items-center justify-between mb-8 pop-out">
+          <div class="text-5xl drop-shadow-[0_10px_15px_rgba(236,72,153,0.4)] pop-out-icon">🎯</div>
+          <div class="text-xs font-display font-bold text-cyber-pink border border-cyber-pink px-3 py-1 uppercase tracking-widest bg-cyber-pink/10">Multiplayer</div>
         </div>
+        
+        <h3 class="text-3xl font-display font-black mb-3 text-white pop-out">Ludo</h3>
+        <p class="text-sm text-slate-400 mb-8 font-medium pop-out">The classic arena. Initiate real-time lobbies with 2 to 4 players. Crush your rivals.</p>
 
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 hover:border-purple-500/50 transition">
-          <div class="text-4xl mb-3">💬</div>
-          <div class="font-black text-lg">Real-time Chat</div>
-          <div class="text-sm text-slate-400 mt-2">Challenge friends instantly. Chat live in the lobby. Slide into DMs. Meet new players every day.</div>
-        </div>
-
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 hover:border-purple-500/50 transition">
-          <div class="text-4xl mb-3">💰</div>
-          <div class="font-black text-lg">PlayCoins Economy</div>
-          <div class="text-sm text-slate-400 mt-2">Win PlayCoins in matches. Spend on cosmetics, tournaments, and exclusive items. Real rewards, real flex.</div>
-        </div>
-
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 hover:border-purple-500/50 transition">
-          <div class="text-4xl mb-3">🏆</div>
-          <div class="font-black text-lg">Tournaments</div>
-          <div class="text-sm text-slate-400 mt-2">Join 4, 8, or 16-player brackets. Winner takes 70% of the pot. Real stakes, real glory.</div>
-        </div>
-
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 hover:border-purple-500/50 transition">
-          <div class="text-4xl mb-3">👑</div>
-          <div class="font-black text-lg">Premium</div>
-          <div class="text-sm text-slate-400 mt-2">Go Premium for 2× daily rewards, 1.5× XP boost, exclusive crown badge, and premium-only cosmetics.</div>
-        </div>
-
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 hover:border-purple-500/50 transition">
-          <div class="text-4xl mb-3">📱</div>
-          <div class="font-black text-lg">Any Device</div>
-          <div class="text-sm text-slate-400 mt-2">Works perfectly on phone, tablet, or laptop. No downloads. Just open and play.</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- HOW IT WORKS -->
-    <section class="mx-auto max-w-4xl px-4 sm:px-6 pb-16 sm:pb-24">
-      <div class="text-center mb-10 sm:mb-14">
-        <div class="text-xs uppercase tracking-widest text-purple-400 font-bold">Simple as 1, 2, 3</div>
-        <h2 class="mt-3 text-3xl sm:text-5xl font-black">Start in <span class="text-purple-400">under 30 seconds</span></h2>
-      </div>
-
-      <div class="space-y-4">
-        <div class="flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-          <div class="h-12 w-12 rounded-full bg-purple-500/20 border border-purple-500/40 grid place-items-center font-black text-purple-400 flex-shrink-0">1</div>
-          <div>
-            <div class="font-bold">Sign up free</div>
-            <div class="text-sm text-slate-400">Just email + password. No credit card. 30 seconds.</div>
-          </div>
-        </div>
-        <div class="flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-          <div class="h-12 w-12 rounded-full bg-purple-500/20 border border-purple-500/40 grid place-items-center font-black text-purple-400 flex-shrink-0">2</div>
-          <div>
-            <div class="font-bold">Pick your avatar</div>
-            <div class="text-sm text-slate-400">Choose from 12 avatars. Customize as you play and unlock more.</div>
-          </div>
-        </div>
-        <div class="flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-          <div class="h-12 w-12 rounded-full bg-purple-500/20 border border-purple-500/40 grid place-items-center font-black text-purple-400 flex-shrink-0">3</div>
-          <div>
-            <div class="font-bold">Play &amp; win PlayCoins</div>
-            <div class="text-sm text-slate-400">Enter the lobby. Challenge anyone. Win coins. Buy premium items.</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="mt-10 text-center">
-        <a href="/login" class="inline-block text-base font-black bg-gradient-to-r from-brand-500 to-fuchsia-500 hover:opacity-90 transition px-10 py-4 rounded-xl glow-purple">
-          🚀 Get Started — It's Free
-        </a>
-      </div>
-    </section>
-
-    <!-- FOOTER -->
-    <footer class="border-t border-slate-900">
-      <div class="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
-        <div class="grid sm:grid-cols-3 gap-8">
-          <div>
-            <div class="flex items-center gap-2 mb-3">
-              <div class="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-500 to-fuchsia-500 grid place-items-center font-black text-sm">P</div>
-              <span class="font-black">PlaySphere</span>
-            </div>
-            <div class="text-xs text-slate-500">
-              The social gaming platform for Africa and the world.
+        <!-- Holographic Data Bar -->
+        <div class="border border-slate-700/50 bg-slate-900/50 p-4 mb-8 flex items-center justify-between pop-out" style="transform: translateZ(30px);">
+          <div class="flex items-center gap-3">
+            <div class="h-8 w-8 border border-cyber-pink grid place-items-center text-xs text-cyber-pink shadow-[0_0_10px_rgba(236,72,153,0.5)]">1v1</div>
+            <div>
+              <div class="text-[10px] font-display text-slate-400 uppercase tracking-widest">Active Rooms</div>
+              <div class="text-xs font-bold text-white">Scanning...</div>
             </div>
           </div>
-          <div>
-            <div class="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">Product</div>
-            <div class="space-y-2 text-sm">
-              <a href="/login" class="block text-slate-400 hover:text-slate-100">Sign Up</a>
-              <a href="/login" class="block text-slate-400 hover:text-slate-100">Log In</a>
-              <a href="/login" class="block text-slate-400 hover:text-slate-100">Play Now</a>
-            </div>
-          </div>
-
-        </div>          <div>
-            <div class="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">Legal</div>
-            <div class="space-y-2 text-sm">
-              <a href="/terms" class="block text-slate-400 hover:text-slate-100">Terms of Service</a>
-              <a href="/privacy" class="block text-slate-400 hover:text-slate-100">Privacy Policy</a>
-              <a href="/refund" class="block text-slate-400 hover:text-slate-100">Refund Policy</a>
-              <a href="mailto:support@playsphere.com" class="block text-slate-400 hover:text-slate-100">Contact Support</a>
-            </div>
-          </div>
-        <div class="mt-8 pt-6 border-t border-slate-900 text-xs text-slate-500 text-center">
-          © 2026 PlaySphere · Virtual currency only, no real-money gambling.
         </div>
+
+        <a href="login" class="block text-center w-full border border-slate-700 hover:border-cyber-pink py-3 text-xs font-display font-bold uppercase tracking-widest transition pop-out" style="transform: translateZ(20px);">Scan for Match</a>
       </div>
-    </footer>
-  </div>
 
-  <script type="module">
-    import { api } from "/static/js/api.js";
-    // Optional: auto-redirect if already logged in
-    // (comment out if you want logged-in users to still see the landing)
-    // const token = api.getToken();
-    // if (token) { try { await api.me(); location.href = "/dashboard"; } catch {} }
+    </div>
+  </section>
 
-    // Live online count (best-effort — will fallback if endpoint missing)
-    try {
-      const res = await fetch("/api/v1/stats/live");
-      if (res.ok) {
-        const data = await res.json();
-        document.getElementById("onlineCount").textContent = data.online ?? "0";
-      }
-    } catch {
-      document.getElementById("onlineCount").textContent = "Live";
-    }
+  <!-- FOOTER -->
+  <footer class="relative z-10 border-t border-slate-800/80 bg-[#02000a]/80 backdrop-blur-md">
+    <div class="mx-auto max-w-6xl px-6 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="text-xs font-display text-slate-500 uppercase tracking-widest">
+        © 2026 PlaySphere Systems
+      </div>
+      <div class="flex gap-6 text-xs font-display text-slate-400 uppercase tracking-widest">
+        <a href="terms" class="hover:text-cyber-cyan transition">Terms</a>
+        <a href="privacy" class="hover:text-cyber-cyan transition">Privacy</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- The 3D Mouse Tilt Script -->
+  <script>
+    const cards = document.querySelectorAll('.tilt-card');
+    
+    cards.forEach(card => {
+      card.addEventListener('mousemove', e => {
+        const rect = card.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        
+        const rotateX = ((y - centerY) / centerY) * -15; // Max tilt 15 degrees
+        const rotateY = ((x - centerX) / centerX) * 15;
+        
+        card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
+      });
+      
+      card.addEventListener('mouseleave', () => {
+        card.style.transform = `perspective(1000px) rotateX(0) rotateY(0) scale3d(1, 1, 1)`;
+        card.style.transition = 'transform 0.5s ease';
+      });
+      
+      card.addEventListener('mouseenter', () => {
+        card.style.transition = 'none'; // Remove transition so it follows mouse instantly
+      });
+    });
   </script>
+
 </body>
 </html>
