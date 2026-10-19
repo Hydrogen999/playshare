@@ -114,6 +114,14 @@ class RoomHub:
         except Exception:
             self.local.get(room_id, {}).pop(user_id, None)
 
+    async def send_to_user(self, room_id: str, user_id: str, raw: dict):
+        # Try local first
+        if user_id in self.local.get(room_id, {}):
+            await self.send_local(room_id, user_id, raw)
+        else:
+            # Fallback to Redis
+            await self.publish(room_id, raw, target=user_id)
+
     async def join(self, room_id: str, user_id: str, ws: WebSocket):
         self.local.setdefault(room_id, {})[user_id] = ws
         await self.subscribe(room_id)
@@ -472,10 +480,16 @@ async def room_ws(ws: WebSocket, room_id: str, token: str = Query(...)):
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
+
             mtype = msg.get("type")
 
+            # ---------- PING ----------
+            if mtype == "ping":
+                await ws.send_text(json.dumps({"type": "pong"}))
+                continue
+
             # ---------- CHAT ----------
-            if mtype == "chat:send":
+            elif mtype == "chat:send":
                 content = (msg.get("content") or "").strip()[:500]
                 if not content:
                     continue
@@ -888,6 +902,92 @@ async def room_ws(ws: WebSocket, room_id: str, token: str = Query(...)):
                         })
                 finally:
                     db_c.close()
+
+            # ---------- CHESS: OFFER DRAW ----------
+            elif mtype == "chess:offer_draw":
+                db_cd: Session = SessionLocal()
+                try:
+                    m = (
+                        db_cd.query(Match)
+                        .filter(
+                            Match.room_id == room_id,
+                            Match.game_slug == "chess",
+                            Match.status == "playing",
+                        )
+                        .first()
+                    )
+                    if not m or not m.state_json:
+                        continue
+                    st = _load_chess_state(m)
+                    if user_id not in (st["white_id"], st["black_id"]):
+                        continue
+                    if st.get("draw_offered_by"):
+                        await hub.send_local(room_id, user_id, {
+                            "type": "chess:error", "error": "Draw already offered",
+                        })
+                        continue
+                    st["draw_offered_by"] = user_id
+                    _save_chess_state(db_cd, m, st)
+
+                    opponent_id = (
+                        st["black_id"] if user_id == st["white_id"] else st["white_id"]
+                    )
+                    await hub.send_to_user(room_id, opponent_id, {
+                        "type": "chess:draw_offered",
+                        "from_user_id": user_id,
+                    })
+                    await hub.send_local(room_id, user_id, {
+                        "type": "chess:draw_offered_sent",
+                    })
+                finally:
+                    db_cd.close()
+
+            # ---------- CHESS: RESPOND TO DRAW ----------
+            elif mtype == "chess:respond_draw":
+                accept = bool(msg.get("accept", False))
+                db_cd2: Session = SessionLocal()
+                try:
+                    m = (
+                        db_cd2.query(Match)
+                        .filter(
+                            Match.room_id == room_id,
+                            Match.game_slug == "chess",
+                            Match.status == "playing",
+                        )
+                        .first()
+                    )
+                    if not m or not m.state_json:
+                        continue
+                    st = _load_chess_state(m)
+                    offerer = st.get("draw_offered_by")
+                    if not offerer or offerer == user_id:
+                        await hub.send_local(room_id, user_id, {
+                            "type": "chess:error", "error": "No pending draw offer",
+                        })
+                        continue
+
+                    if accept:
+                        st["draw_offered_by"] = None
+                        _save_chess_state(db_cd2, m, st)
+                        xp_rewards = _settle_match(db_cd2, m, None)
+                        elo_result = _update_chess_elo(db_cd2, st, "draw")
+                        await hub.publish(room_id, {
+                            "type": "chess:end",
+                            "result": "draw",
+                            "winner_id": None,
+                            "wager": m.wager,
+                            "pot": 0,
+                            "xp": xp_rewards,
+                            "elo": elo_result,
+                        })
+                    else:
+                        st["draw_offered_by"] = None
+                        _save_chess_state(db_cd2, m, st)
+                        await hub.publish(room_id, {
+                            "type": "chess:draw_declined",
+                        })
+                finally:
+                    db_cd2.close()
 
             # ---------- CHESS: RESIGN ----------
             elif mtype == "chess:resign":
