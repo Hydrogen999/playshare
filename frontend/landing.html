@@ -68,28 +68,16 @@
   }
 
   /* Pop-out 3D elements inside the card */
-  .pop-out {
-    transform: translateZ(40px);
-    transition: transform 0.3s ease;
-  }
-  .pop-out-icon {
-    transform: translateZ(60px);
-    transition: transform 0.3s ease;
-  }
+  .pop-out { transform: translateZ(40px); transition: transform 0.3s ease; }
+  .pop-out-icon { transform: translateZ(60px); transition: transform 0.3s ease; }
 
   /* HUD Corner Brackets */
   .hud-card::before, .hud-card::after {
     content: ''; position: absolute; width: 20px; height: 20px; pointer-events: none; transition: all 0.3s ease;
   }
-  .hud-card::before {
-    top: -1px; left: -1px; border-top: 2px solid #a855f7; border-left: 2px solid #a855f7;
-  }
-  .hud-card::after {
-    bottom: -1px; right: -1px; border-bottom: 2px solid #a855f7; border-right: 2px solid #a855f7;
-  }
-  .hud-card:hover::before, .hud-card:hover::after {
-    width: 40px; height: 40px; border-color: #06b6d4;
-  }
+  .hud-card::before { top: -1px; left: -1px; border-top: 2px solid #a855f7; border-left: 2px solid #a855f7; }
+  .hud-card::after { bottom: -1px; right: -1px; border-bottom: 2px solid #a855f7; border-right: 2px solid #a855f7; }
+  .hud-card:hover::before, .hud-card:hover::after { width: 40px; height: 40px; border-color: #06b6d4; }
 
   /* Scanning Line */
   .scanline {
@@ -167,7 +155,7 @@
   </header>
 
   <!-- HERO SECTION -->
-  <section class="relative z-10 mx-auto max-w-7xl px-6 pt-24 pb-32 flex flex-col items-center text-center">
+  <section class="relative z-10 mx-auto max-w-7xl px-6 pt-24 pb-16 flex flex-col items-center text-center">
     
     <div class="inline-flex items-center gap-3 px-4 py-2 border border-cyber-purple/50 bg-cyber-purple/10 backdrop-blur-md mb-8">
       <span class="h-2 w-2 rounded-full bg-cyber-cyan animate-ping"></span>
@@ -190,6 +178,10 @@
       <a href="login" class="w-full sm:w-auto text-center text-sm font-display font-bold btn-cyber px-10 py-4">
         Access Terminal
       </a>
+      <!-- ACTIVE SHARE BUTTON ADDED HERE -->
+      <button id="shareLandingBtn" class="w-full sm:w-auto text-center text-sm font-display font-bold border-2 border-slate-600 hover:border-slate-400 text-slate-300 hover:text-white px-10 py-4 transition uppercase tracking-widest">
+        📢 Share Game
+      </button>
     </div>
 
   </section>
@@ -201,16 +193,12 @@
       <!-- CHESS MODULE -->
       <div class="hud-card p-8 group tilt-card">
         <div class="scanline"></div>
-        
         <div class="flex items-center justify-between mb-8 pop-out">
           <div class="text-5xl drop-shadow-[0_10px_15px_rgba(6,182,212,0.4)] pop-out-icon">♟️</div>
           <div class="text-xs font-display font-bold text-cyber-cyan border border-cyber-cyan px-3 py-1 uppercase tracking-widest bg-cyber-cyan/10">Tactical</div>
         </div>
-        
         <h3 class="text-3xl font-display font-black mb-3 text-white pop-out">Chess</h3>
         <p class="text-sm text-slate-400 mb-8 font-medium pop-out">Engage in ranked matches. Master the board. Unlock holographic skins based on your Elo tier.</p>
-
-        <!-- Holographic Data Bar -->
         <div class="border border-slate-700/50 bg-slate-900/50 p-4 mb-8 pop-out" style="transform: translateZ(30px);">
           <div class="flex items-center justify-between mb-2">
             <span class="text-[10px] font-display text-slate-400 uppercase tracking-widest">Current Rating</span>
@@ -220,23 +208,18 @@
             <div class="h-full bg-gradient-to-r from-cyber-cyan to-cyber-purple w-1/3 shadow-[0_0_10px_#06b6d4]"></div>
           </div>
         </div>
-
         <a href="/login" class="block text-center w-full border border-slate-700 hover:border-cyber-cyan py-3 text-xs font-display font-bold uppercase tracking-widest transition pop-out" style="transform: translateZ(20px);">Deploy to Board</a>
       </div>
 
       <!-- LUDO MODULE -->
       <div class="hud-card p-8 group tilt-card">
         <div class="scanline" style="animation-delay: 2s;"></div>
-        
         <div class="flex items-center justify-between mb-8 pop-out">
           <div class="text-5xl drop-shadow-[0_10px_15px_rgba(236,72,153,0.4)] pop-out-icon">🎯</div>
           <div class="text-xs font-display font-bold text-cyber-pink border border-cyber-pink px-3 py-1 uppercase tracking-widest bg-cyber-pink/10">Multiplayer</div>
         </div>
-        
         <h3 class="text-3xl font-display font-black mb-3 text-white pop-out">Ludo</h3>
         <p class="text-sm text-slate-400 mb-8 font-medium pop-out">The classic arena. Initiate real-time lobbies with 2 to 4 players. Crush your rivals.</p>
-
-        <!-- Holographic Data Bar -->
         <div class="border border-slate-700/50 bg-slate-900/50 p-4 mb-8 flex items-center justify-between pop-out" style="transform: translateZ(30px);">
           <div class="flex items-center gap-3">
             <div class="h-8 w-8 border border-cyber-pink grid place-items-center text-xs text-cyber-pink shadow-[0_0_10px_rgba(236,72,153,0.5)]">1v1</div>
@@ -246,7 +229,6 @@
             </div>
           </div>
         </div>
-
         <a href="login" class="block text-center w-full border border-slate-700 hover:border-cyber-pink py-3 text-xs font-display font-bold uppercase tracking-widest transition pop-out" style="transform: translateZ(20px);">Scan for Match</a>
       </div>
 
@@ -279,7 +261,7 @@
         const centerX = rect.width / 2;
         const centerY = rect.height / 2;
         
-        const rotateX = ((y - centerY) / centerY) * -15; // Max tilt 15 degrees
+        const rotateX = ((y - centerY) / centerY) * -15;
         const rotateY = ((x - centerX) / centerX) * 15;
         
         card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
@@ -291,10 +273,26 @@
       });
       
       card.addEventListener('mouseenter', () => {
-        card.style.transition = 'none'; // Remove transition so it follows mouse instantly
+        card.style.transition = 'none';
       });
     });
   </script>
 
+  <!-- SHARE SCRIPT -->
+  <script>
+    document.getElementById('shareLandingBtn')?.addEventListener('click', async () => {
+      const text = "Join me on PlaySphere! 🎮 Play real-time Ludo, Chess, and Dice games with friends. No downloads needed.";
+      const url = "https://playshare.onrender.com";
+      
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: "PlaySphere", text: text, url: url });
+        } catch (e) {}
+      } else {
+        await navigator.clipboard.writeText(`${text}\n${url}`);
+        alert("Link copied! Share it on WhatsApp.");
+      }
+    });
+  </script>
 </body>
 </html>
