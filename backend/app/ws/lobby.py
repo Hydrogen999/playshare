@@ -81,10 +81,8 @@ class LobbyHub:
 
     async def publish(self, raw: dict, exclude: str | None = None, target: str | None = None):
         env = {"__raw": raw}
-        if exclude:
-            env["__sender"] = exclude
-        if target:
-            env["__target"] = target
+        if exclude: env["__sender"] = exclude
+        if target: env["__target"] = target
         await self._redis.publish(LOBBY_CHANNEL, json.dumps(env))
 
     async def send_local(self, user_id: str, raw: dict) -> bool:
@@ -105,14 +103,9 @@ class LobbyHub:
 
     async def presence_add(self, uid, username, avatar_id, level, frame_color, premium, x, y):
         await self._redis.hset(PRESENCE_KEY, uid, json.dumps({
-            "id": uid,
-            "username": username,
-            "avatar_id": avatar_id,
-            "level": level,
-            "frame_color": frame_color,
-            "is_premium": premium,
-            "x": x,
-            "y": y,
+            "id": uid, "username": username, "avatar_id": avatar_id,
+            "level": level, "frame_color": frame_color, "is_premium": premium,
+            "x": x, "y": y,
         }))
 
     async def presence_remove(self, uid):
@@ -136,9 +129,7 @@ class LobbyHub:
         await self._redis.setex(
             f"{CHALLENGE_PREFIX}{cid}", CHALLENGE_TTL,
             json.dumps({
-                "id": cid,
-                "from_id": from_id,
-                "to_id": to_id,
+                "id": cid, "from_id": from_id, "to_id": to_id,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }),
         )
@@ -184,11 +175,22 @@ async def lobby_ws(ws: WebSocket, token: str = Query(...)):
 
     await hub.start()
     await ws.accept()
+
+    # --- INSTANT GHOST DISCONNECT FIX ---
+    # If this user is already in the local dict, kick the old socket out instantly
+    old_ws = hub.local.get(user_id)
+    if old_ws:
+        try:
+            await old_ws.close()
+        except Exception:
+            pass
+        hub.local.pop(user_id, None)
+    # ------------------------------------
+
     hub.local[user_id] = ws
 
     x = random.randint(PADDING, WORLD_W - PADDING)
     y = random.randint(PADDING, WORLD_H - PADDING)
-
     await hub.presence_add(user_id, username, avatar_id, level, frame_color, premium, x, y)
 
     snapshot = await hub.presence_all()
@@ -202,14 +204,10 @@ async def lobby_ws(ws: WebSocket, token: str = Query(...)):
     await hub.publish({
         "type": "lobby:player_joined",
         "player": {
-            "id": user_id,
-            "username": username,
-            "avatar_id": avatar_id,
-            "level": level,
-            "frame_color": frame_color,
-            "is_premium": premium,
-            "x": x,
-            "y": y,
+            "id": user_id, "username": username,
+            "avatar_id": avatar_id, "level": level,
+            "frame_color": frame_color, "is_premium": premium,
+            "x": x, "y": y,
         },
     }, exclude=user_id)
 
@@ -240,29 +238,22 @@ async def lobby_ws(ws: WebSocket, token: str = Query(...)):
                     continue
                 if not await hub._redis.hexists(PRESENCE_KEY, target_id):
                     await hub.send_local(user_id, {
-                        "type": "challenge:error",
-                        "error": "Player is not online",
+                        "type": "challenge:error", "error": "Player is not online",
                     })
                     continue
 
                 cid = await hub.challenge_create(user_id, target_id)
-
                 await hub.send_to_user(target_id, {
                     "type": "challenge:incoming",
                     "challenge_id": cid,
                     "from": {
-                        "id": user_id,
-                        "username": username,
-                        "avatar_id": avatar_id,
-                        "level": level,
-                        "frame_color": frame_color,
-                        "is_premium": premium,
+                        "id": user_id, "username": username,
+                        "avatar_id": avatar_id, "level": level,
+                        "frame_color": frame_color, "is_premium": premium,
                     },
                 })
                 await hub.send_local(user_id, {
-                    "type": "challenge:sent",
-                    "challenge_id": cid,
-                    "to_id": target_id,
+                    "type": "challenge:sent", "challenge_id": cid, "to_id": target_id,
                 })
 
             elif mtype == "challenge:respond":
@@ -272,16 +263,14 @@ async def lobby_ws(ws: WebSocket, token: str = Query(...)):
 
                 if not c or c["to_id"] != user_id:
                     await hub.send_local(user_id, {
-                        "type": "challenge:error",
-                        "error": "Challenge expired or invalid",
+                        "type": "challenge:error", "error": "Challenge expired or invalid",
                     })
                     continue
                 await hub.challenge_del(cid)
 
                 if not accept:
                     await hub.send_to_user(c["from_id"], {
-                        "type": "challenge:declined",
-                        "challenge_id": cid,
+                        "type": "challenge:declined", "challenge_id": cid,
                     })
                     continue
 
@@ -291,15 +280,12 @@ async def lobby_ws(ws: WebSocket, token: str = Query(...)):
                     ub = db2.get(User, c["to_id"])
                     if not ua or not ub:
                         await hub.send_local(user_id, {
-                            "type": "challenge:error",
-                            "error": "One player no longer exists",
+                            "type": "challenge:error", "error": "One player no longer exists",
                         })
                         continue
 
                     room = Room(
-                        game_slug="dice",
-                        status="waiting",
-                        wager=0,
+                        game_slug="dice", status="waiting", wager=0,
                         created_by=c["from_id"],
                     )
                     db2.add(room)
@@ -308,26 +294,20 @@ async def lobby_ws(ws: WebSocket, token: str = Query(...)):
                     db2.add(RoomMember(room_id=room.id, user_id=c["to_id"]))
                     db2.commit()
                     room_id = room.id
-                    print(f"[challenge] room created {room_id} for {c['from_id']} vs {c['to_id']}")
                 except Exception as e:
                     print(f"[challenge accept error] {e}")
                     await hub.send_local(user_id, {
-                        "type": "challenge:error",
-                        "error": "Could not create room",
+                        "type": "challenge:error", "error": "Could not create room",
                     })
                     continue
                 finally:
                     db2.close()
 
                 await hub.send_to_user(c["from_id"], {
-                    "type": "challenge:accepted",
-                    "challenge_id": cid,
-                    "room_id": room_id,
+                    "type": "challenge:accepted", "challenge_id": cid, "room_id": room_id,
                 })
                 await hub.send_to_user(c["to_id"], {
-                    "type": "challenge:accepted",
-                    "challenge_id": cid,
-                    "room_id": room_id,
+                    "type": "challenge:accepted", "challenge_id": cid, "room_id": room_id,
                 })
 
     except WebSocketDisconnect:
