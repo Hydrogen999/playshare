@@ -15,148 +15,170 @@
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  /* ---------- Dice ---------- */
-  @keyframes roll {
-    0% { transform: rotate(0deg) scale(1); }
-    25% { transform: rotate(-180deg) scale(1.15); }
-    50% { transform: rotate(180deg) scale(1.25); }
-    75% { transform: rotate(360deg) scale(1.1); }
-    100% { transform: rotate(540deg) scale(1); }
-  }
+  /* ---------- DICE ---------- */
+  @keyframes roll { 0% { transform: rotate(0deg) scale(1); } 25% { transform: rotate(-180deg) scale(1.15); } 50% { transform: rotate(180deg) scale(1.25); } 75% { transform: rotate(360deg) scale(1.1); } 100% { transform: rotate(540deg) scale(1); } }
   .rolling { animation: roll 0.7s ease-in-out; }
-  @keyframes pop {
-    0% { transform: scale(0.5); opacity: 0; }
-    60% { transform: scale(1.15); opacity: 1; }
-    100% { transform: scale(1); opacity: 1; }
-  }
+  @keyframes pop { 0% { transform: scale(0.5); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
   .pop { animation: pop 0.4s ease-out; }
-  .die {
-    width: 76px; height: 76px;
-    background: linear-gradient(145deg, #f8fafc, #cbd5e1);
-    border-radius: 14px;
-    display: grid; place-items: center;
-    font-size: 40px; font-weight: 800; color: #0f172a;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.35), inset 0 -4px 8px rgba(0,0,0,0.15);
+  .die { 
+    width: 76px; height: 76px; 
+    background: linear-gradient(145deg, #ffffff, #e2e8f0); 
+    border-radius: 16px; 
+    display: grid; place-items: center; 
+    font-size: 40px; font-weight: 800; color: #0f172a; 
+    box-shadow: 0 8px 20px rgba(0,0,0,0.4), inset 0 -4px 8px rgba(0,0,0,0.1), inset 0 4px 8px rgba(255,255,255,0.8); 
   }
 
-  /* ---------- Ludo ---------- */
+  /* ---------- LUDO ---------- */
   .ludo-root { display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%; }
-  .ludo-status-bar {
-    width: min(94vw, 540px);
-    text-align: center; font-size: 13px; padding: 6px 10px;
-    background: rgba(15,23,42,0.6);
-    border: 1px solid #1e293b; border-radius: 10px;
-  }
+  .ludo-status-bar { width: min(94vw, 540px); text-align: center; font-size: 13px; font-weight: 700; padding: 8px 12px; background: rgba(15,23,42,0.8); border: 1px solid #1e293b; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+  
   .ludo-board-wrap { position: relative; }
-  .ludo-board {
-    position: relative;
-    display: grid;
-    grid-template-columns: repeat(15, 1fr);
-    grid-template-rows: repeat(15, 1fr);
-    aspect-ratio: 1 / 1;
-    width: min(94vw, 540px);
-    background: #0a0e1a;
-    border: 2px solid #1e293b; border-radius: 12px;
-    overflow: hidden;
+  
+  /* Premium Ludo Board */
+  .ludo-board { 
+    position: relative; display: grid; grid-template-columns: repeat(15, 1fr); grid-template-rows: repeat(15, 1fr); 
+    aspect-ratio: 1 / 1; width: min(94vw, 540px); 
+    background: #0f172a; 
+    border: 4px solid #1e293b; 
+    border-radius: 16px; 
+    overflow: hidden; 
+    box-shadow: 0 20px 40px rgba(0,0,0,0.6), inset 0 0 20px rgba(0,0,0,0.5); 
   }
-  .ludo-cell { position: relative; background: #1e293b; border: 0.5px solid #0f172a; }
-  .ludo-path { background: #cbd5e1; }
-  .ludo-path.ludo-safe { background: #fbbf24; }
+  .ludo-cell { 
+    position: relative; 
+    background: #1e293b; 
+    border: 0.5px solid rgba(0,0,0,0.4); 
+    box-shadow: inset 0 1px 2px rgba(255,255,255,0.05); 
+  }
+  .ludo-path { 
+    background: linear-gradient(145deg, #f1f5f9, #cbd5e1); 
+    box-shadow: inset 0 1px 3px rgba(255,255,255,0.8), inset 0 -1px 3px rgba(0,0,0,0.2); 
+  }
+  .ludo-path.ludo-safe { 
+    background: linear-gradient(145deg, #fcd34d, #f59e0b); 
+    box-shadow: inset 0 1px 3px rgba(255,255,255,0.6), inset 0 -1px 3px rgba(0,0,0,0.3); 
+  }
+  
   .ludo-void { background: transparent; border: none; }
   .ludo-home-col { border: 0.5px solid rgba(0,0,0,0.3); }
-  .ludo-home-red { background: #ef4444; }
-  .ludo-home-green { background: #22c55e; }
-  .ludo-home-yellow { background: #eab308; }
-  .ludo-home-blue { background: #3b82f6; }
-  .ludo-base {
-    border: 2px solid rgba(0,0,0,0.4);
-    padding: 22%;
-    display: grid; place-items: center;
-  }
-  .ludo-base-red { background: #ef4444; }
-  .ludo-base-green { background: #22c55e; }
-  .ludo-base-yellow { background: #eab308; }
-  .ludo-base-blue { background: #3b82f6; }
-  .ludo-base-inner { width: 100%; height: 100%; background: rgba(255,255,255,0.9); border-radius: 8px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.15); }
+  .ludo-home-red { background: linear-gradient(145deg, #ef4444, #b91c1c); }
+  .ludo-home-green { background: linear-gradient(145deg, #22c55e, #15803d); }
+  .ludo-home-yellow { background: linear-gradient(145deg, #eab308, #a16207); }
+  .ludo-home-blue { background: linear-gradient(145deg, #3b82f6, #1d4ed8); }
+  
+  .ludo-base { border: 2px solid rgba(0,0,0,0.4); padding: 22%; display: grid; place-items: center; box-shadow: inset 0 0 20px rgba(0,0,0,0.3); }
+  .ludo-base-red { background: linear-gradient(135deg, #ef4444, #991b1b); }
+  .ludo-base-green { background: linear-gradient(135deg, #22c55e, #166534); }
+  .ludo-base-yellow { background: linear-gradient(135deg, #eab308, #854d0e); }
+  .ludo-base-blue { background: linear-gradient(135deg, #3b82f6, #1e3a8a); }
+  
+  .ludo-base-inner { width: 100%; height: 100%; background: rgba(255,255,255,0.9); border-radius: 8px; box-shadow: inset 0 4px 10px rgba(0,0,0,0.2), 0 4px 10px rgba(0,0,0,0.3); }
+  
   .ludo-center { position: relative; }
-  .ludo-center svg { width: 100%; height: 100%; display: block; }
+  .ludo-center svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4)); }
   .ludo-token-layer { position: absolute; inset: 0; }
-  .ludo-token {
-    position: absolute; width: 5.2%; aspect-ratio: 1 / 1; border-radius: 50%;
-    transform: translate(-50%, -50%);
-    border: 2px solid rgba(0,0,0,0.5);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-    color: white; font-size: 9px; font-weight: 800;
-    display: grid; place-items: center;
-    pointer-events: none;
-    transition: left 0.35s cubic-bezier(0.4,0,0.2,1), top 0.35s cubic-bezier(0.4,0,0.2,1);
-    z-index: 3;
+  
+  .ludo-token { 
+    position: absolute; width: 5.2%; aspect-ratio: 1 / 1; border-radius: 50%; 
+    transform: translate(-50%, -50%); 
+    border: 2px solid rgba(0,0,0,0.5); 
+    box-shadow: 0 4px 6px rgba(0,0,0,0.5), inset 0 2px 4px rgba(255,255,255,0.4); 
+    color: white; font-size: 9px; font-weight: 800; 
+    display: grid; place-items: center; 
+    pointer-events: none; 
+    transition: left 0.35s cubic-bezier(0.4,0,0.2,1), top 0.35s cubic-bezier(0.4,0,0.2,1); 
+    z-index: 3; 
   }
   .ludo-token.ludo-token-mine { z-index: 4; }
-  .ludo-token.ludo-token-movable {
-    pointer-events: auto !important; cursor: pointer !important; z-index: 10;
-    animation: tokenPulse 1.1s ease-in-out infinite;
+  .ludo-token.ludo-token-movable { 
+    pointer-events: auto !important; cursor: pointer !important; z-index: 10; 
+    animation: tokenPulse 1.1s ease-in-out infinite; 
   }
-  @keyframes tokenPulse {
-    0%, 100% { box-shadow: 0 0 0 3px #fbbf24, 0 2px 8px rgba(0,0,0,0.6); }
-    50% { box-shadow: 0 0 0 8px rgba(251,191,36,0.35), 0 0 24px rgba(251,191,36,0.9); }
-  }
+  @keyframes tokenPulse { 0%, 100% { box-shadow: 0 0 0 3px #fbbf24, 0 4px 8px rgba(0,0,0,0.6); } 50% { box-shadow: 0 0 0 8px rgba(251,191,36,0.35), 0 0 24px rgba(251,191,36,0.9); } }
+  
   .ludo-dice-bar { width: min(94vw, 540px); display: flex; justify-content: center; align-items: center; gap: 12px; }
-  .ludo-dice-btn {
-    background: linear-gradient(145deg, #f8fafc, #cbd5e1);
-    color: #0f172a; font-size: 34px; font-weight: 800;
-    width: 84px; height: 84px; border-radius: 16px;
-    border: 2px solid #94a3b8;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.4), inset 0 -4px 8px rgba(0,0,0,0.15);
-    cursor: pointer; transition: transform 0.15s;
+  .ludo-dice-btn { 
+    background: linear-gradient(145deg, #ffffff, #cbd5e1); 
+    color: #0f172a; font-size: 34px; font-weight: 800; 
+    width: 84px; height: 84px; border-radius: 16px; 
+    border: 2px solid #94a3b8; 
+    box-shadow: 0 8px 20px rgba(0,0,0,0.4), inset 0 -4px 8px rgba(0,0,0,0.15), inset 0 4px 8px rgba(255,255,255,0.8); 
+    cursor: pointer; transition: transform 0.15s; 
   }
   .ludo-dice-btn.ludo-dice-disabled { opacity: 0.55; cursor: not-allowed; }
   .ludo-dice-btn.dice-spinning { animation: diceSpin 0.7s ease-out; }
-  @keyframes diceSpin {
-    0% { transform: rotate(0deg) scale(1); }
-    25% { transform: rotate(-120deg) scale(1.15); }
-    50% { transform: rotate(180deg) scale(0.9); }
-    75% { transform: rotate(360deg) scale(1.12); }
-    100% { transform: rotate(540deg) scale(1); }
-  }
-  .ludo-dice-result { font-size: 32px; font-weight: 900; color: #a78bfa; min-width: 50px; text-align: center; opacity: 0; }
+  @keyframes diceSpin { 0% { transform: rotate(0deg) scale(1); } 25% { transform: rotate(-120deg) scale(1.15); } 50% { transform: rotate(180deg) scale(0.9); } 75% { transform: rotate(360deg) scale(1.12); } 100% { transform: rotate(540deg) scale(1); } }
+  
+  .ludo-dice-result { font-size: 32px; font-weight: 900; color: #a78bfa; min-width: 50px; text-align: center; opacity: 0; text-shadow: 0 0 20px rgba(167,139,250,0.5); }
   .ludo-dice-result.show { opacity: 1; animation: pop 0.45s ease-out; }
-  .ludo-msg-bar { width: min(94vw, 540px); text-align: center; font-size: 13px; font-weight: 600; min-height: 20px; }
-  .ludo-msg-info { color: #94a3b8; }
-  .ludo-msg-success { color: #22c55e; }
-  .ludo-msg-error { color: #ef4444; }
-  .ludo-msg-warn { color: #fbbf24; }
-  .ludo-turn-banner {
-    position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    padding: 12px 24px; border-radius: 14px;
-    font-weight: 900; font-size: 20px; letter-spacing: 2px;
-    text-transform: uppercase; pointer-events: none; z-index: 20;
-    opacity: 0; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-  }
+  .ludo-msg-bar { width: min(94vw, 540px); text-align: center; font-size: 13px; font-weight: 700; min-height: 20px; }
+  .ludo-msg-info { color: #94a3b8; } .ludo-msg-success { color: #22c55e; } .ludo-msg-error { color: #ef4444; } .ludo-msg-warn { color: #fbbf24; }
+  
+  .ludo-turn-banner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 12px 24px; border-radius: 14px; font-weight: 900; font-size: 20px; letter-spacing: 2px; text-transform: uppercase; pointer-events: none; z-index: 20; opacity: 0; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
   .ludo-turn-banner.show { animation: bannerFlash 1.6s ease-out; }
-  @keyframes bannerFlash {
-    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
-    15%  { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
-    30%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-    85%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-    100% { opacity: 0; transform: translate(-50%, -50%) scale(1.1); }
-  }
-  .ludo-turn-banner.me { background: linear-gradient(135deg, #7c3aed, #a78bfa); color: white; }
+  @keyframes bannerFlash { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); } 15% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); } 30% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 85% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.1); } }
+  .ludo-turn-banner.me { background: linear-gradient(135deg, #7c3aed, #a78bfa); color: white; box-shadow: 0 10px 30px rgba(124,58,237,0.5); }
   .ludo-turn-banner.them { background: linear-gradient(135deg, #334155, #475569); color: #e2e8f0; }
-  .ludo-win-overlay {
-    position: absolute; inset: 0;
-    background: rgba(2,6,23,0.82);
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    z-index: 30; border-radius: 12px; gap: 8px;
-    opacity: 0; pointer-events: none; transition: opacity 0.3s;
-  }
+  .ludo-win-overlay { position: absolute; inset: 0; background: rgba(2,6,23,0.85); backdrop-filter: blur(4px); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 30; border-radius: 12px; gap: 8px; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
   .ludo-win-overlay.show { opacity: 1; pointer-events: auto; }
   .ludo-win-title { font-size: 38px; font-weight: 900; letter-spacing: 3px; animation: pop 0.6s ease-out; }
   .ludo-win-title.win { color: #22c55e; text-shadow: 0 0 30px rgba(34,197,94,0.7); }
   .ludo-win-title.lose { color: #ef4444; text-shadow: 0 0 30px rgba(239,68,68,0.7); }
-  .ludo-win-sub { font-size: 16px; color: #cbd5e1; font-weight: 600; }
+  .ludo-win-sub { font-size: 16px; color: #cbd5e1; font-weight: 700; }
 
+  /* ---------- CHESS ---------- */
+  .chess-root { display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%; }
+  .chess-status-bar { width: min(94vw, 540px); text-align: center; font-size: 13px; font-weight: 700; padding: 8px 12px; background: rgba(15,23,42,0.8); border: 1px solid #1e293b; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+  .chess-tier-label { width: min(94vw, 540px); text-align: center; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; opacity: 0.9; margin-top: -4px; }
+  
+  /* Premium Chess Board */
+  .chess-board { 
+    display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); 
+    aspect-ratio: 1 / 1; width: min(94vw, 540px); 
+    border-radius: 12px; 
+    overflow: hidden; 
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8), 0 0 0 4px #1e293b; 
+    user-select: none; 
+  }
+  .chess-cell { 
+    position: relative; display: grid; place-items: center; 
+    box-shadow: inset 0 0 8px rgba(0,0,0,0.1); 
+  }
+  
+  .chess-light { background: #ead9b8; } .chess-dark { background: #b58863; }
+  .chess-selected { box-shadow: inset 0 0 0 4px #a855f7; }
+  .chess-lastmove { box-shadow: inset 0 0 0 3px rgba(168,85,247,0.5); }
+  .chess-dest::after { content: ""; position: absolute; width: 26%; aspect-ratio: 1/1; border-radius: 50%; background: rgba(34,197,94,0.6); pointer-events: none; }
+  .chess-capture::after { content: ""; position: absolute; inset: 6%; border-radius: 50%; border: 3px solid rgba(239,68,68,0.8); pointer-events: none; }
+  .chess-check { background: radial-gradient(circle, rgba(239,68,68,0.8), transparent 70%), linear-gradient(to bottom, #ead9b8, #b58863); }
+  
+  /* Floating Chess Pieces */
+  .chess-piece { 
+    font-size: min(10.5vw, 52px); 
+    line-height: 1; 
+    cursor: default; 
+    pointer-events: auto; 
+    z-index: 2; 
+    transition: transform 0.2s, filter 0.2s; 
+    filter: drop-shadow(0 4px 4px rgba(0,0,0,0.4));
+  }
+  .chess-piece:hover { 
+    transform: scale(1.15) translateY(-2px); 
+    filter: drop-shadow(0 8px 8px rgba(0,0,0,0.6)); 
+  }
+  .chess-white { color: #ffffff; }
+  .chess-black { color: #1e293b; }
+  
+  .chess-coord { position: absolute; font-size: 9px; font-weight: 800; opacity: 0.55; pointer-events: none; }
+  .chess-coord-file { bottom: 2px; right: 3px; } .chess-coord-rank { top: 2px; left: 3px; }
+  .chess-msg-bar { width: min(94vw, 540px); text-align: center; font-size: 13px; font-weight: 600; min-height: 20px; margin-top: 4px; }
+  .chess-msg-info { color: #94a3b8; } .chess-msg-error { color: #ef4444; } .chess-msg-success { color: #22c55e; }
+  
+  .chess-resign-btn { width: min(94vw, 540px); padding: 10px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #f87171; font-size: 13px; font-weight: 700; cursor: pointer; transition: background 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+  .chess-resign-btn:hover { background: #1e293b; }
+
+  /* ---------- MOBILE TWEAKS & CHAT DRAWER ---------- */
   @media (max-width: 767px) {
     .die { width: 60px; height: 60px; font-size: 34px; border-radius: 12px; }
     .ludo-dice-btn { width: 72px; height: 72px; font-size: 28px; }
@@ -165,151 +187,15 @@
     .ludo-win-title { font-size: 30px; }
     .ludo-win-sub { font-size: 14px; }
     .ludo-msg-bar { font-size: 12px; }
-  }
-
-  /* ---------- Mobile chat drawer (FIXED) ---------- */
-  @media (max-width: 767px) {
-    #chatPanel {
-      position: fixed !important;
-      inset: 0 !important;
-      z-index: 100 !important;
-      transform: translateY(100%) !important;
-      transition: transform 0.25s ease-out;
-      background: #020617;
-      border-radius: 0 !important;
-      margin: 0 !important;
-      visibility: hidden;
-      display: flex !important;
-    }
-    body.chat-open #chatPanel {
-      transform: translateY(0) !important;
-      visibility: visible !important;
-    }
+    .chess-piece { font-size: min(10vw, 44px); }
+    
+    #chatPanel { position: fixed !important; inset: 0 !important; z-index: 100 !important; transform: translateY(100%) !important; transition: transform 0.25s ease-out; background: #020617; border-radius: 0 !important; margin: 0 !important; visibility: hidden; display: flex !important; }
+    body.chat-open #chatPanel { transform: translateY(0) !important; visibility: visible !important; }
     #chatToggleBtn { display: flex !important; }
   }
   @media (min-width: 768px) {
     #chatToggleBtn { display: none !important; }
     #chatPanelClose { display: none !important; }
-  }
-
-    /* ---------- CHESS ---------- */
-  .chess-root {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    align-items: center;
-    width: 100%;
-  }
-  .chess-status-bar {
-    width: min(94vw, 540px);
-    text-align: center;
-    font-size: 13px;
-    font-weight: 700;
-    padding: 8px 12px;
-    background: rgba(15,23,42,0.7);
-    border: 1px solid #1e293b;
-    border-radius: 10px;
-  }
-    .chess-tier-label {
-    width: min(94vw, 540px);
-    text-align: center;
-    font-size: 11px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    opacity: 0.9;
-  }
-  .chess-board {
-    display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    grid-template-rows: repeat(8, 1fr);
-    aspect-ratio: 1 / 1;
-    width: min(94vw, 540px);
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-    user-select: none;
-  }
-  .chess-cell {
-    position: relative;
-    display: grid;
-    place-items: center;
-  }
-  .chess-light { background: #ead9b8; }
-  .chess-dark  { background: #b58863; }
-  .chess-selected { box-shadow: inset 0 0 0 4px #a855f7; }
-  .chess-lastmove { box-shadow: inset 0 0 0 3px rgba(168,85,247,0.5); }
-  .chess-dest::after {
-    content: "";
-    position: absolute;
-    width: 26%;
-    aspect-ratio: 1/1;
-    border-radius: 50%;
-    background: rgba(34,197,94,0.6);
-    pointer-events: none;
-  }
-  .chess-capture::after {
-    content: "";
-    position: absolute;
-    inset: 6%;
-    border-radius: 50%;
-    border: 3px solid rgba(239,68,68,0.8);
-    pointer-events: none;
-  }
-  .chess-check {
-    background: radial-gradient(circle, rgba(239,68,68,0.8), transparent 70%),
-                linear-gradient(to bottom, #ead9b8, #b58863);
-  }
-  .chess-piece {
-    font-size: min(10.5vw, 52px);
-    line-height: 1;
-    cursor: default;
-    pointer-events: auto;
-    z-index: 2;
-    transition: transform 0.1s;
-  }
-  .chess-piece:hover { transform: scale(1.08); }
-  .chess-white {
-    color: #fafafa;
-    text-shadow: 0 0 2px #000, 0 1px 2px rgba(0,0,0,0.6), 0 0 8px rgba(0,0,0,0.4);
-  }
-  .chess-black {
-    color: #1a1a1a;
-    text-shadow: 0 1px 1px rgba(255,255,255,0.15), 0 0 8px rgba(0,0,0,0.5);
-  }
-  .chess-coord {
-    position: absolute;
-    font-size: 9px;
-    font-weight: 800;
-    opacity: 0.55;
-    pointer-events: none;
-  }
-  .chess-coord-file { bottom: 2px; right: 3px; }
-  .chess-coord-rank { top: 2px; left: 3px; }
-  .chess-msg-bar {
-    width: min(94vw, 540px);
-    text-align: center;
-    font-size: 13px;
-    font-weight: 600;
-    min-height: 20px;
-  }
-  .chess-msg-info { color: #94a3b8; }
-  .chess-msg-error { color: #ef4444; }
-  .chess-msg-success { color: #22c55e; }
-  .chess-resign-btn {
-    width: min(94vw, 540px);
-    padding: 10px;
-    border-radius: 10px;
-    border: 1px solid #334155;
-    background: #0f172a;
-    color: #f87171;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-  }
-  .chess-resign-btn:hover { background: #1e293b; }
-  @media (max-width: 767px) {
-    .chess-piece { font-size: min(10vw, 44px); }
   }
 </style>
 </head>
@@ -319,113 +205,78 @@
     <div class="mx-auto max-w-6xl px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between">
       <div class="flex items-center gap-2 sm:gap-3">
         <a href="/lobby" class="flex items-center gap-2">
-          <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold">P</div>
-          <span class="font-bold hidden sm:inline">PlaySphere</span>
+          <div class="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-500 to-fuchsia-600 grid place-items-center font-black shadow-lg shadow-brand-500/20">P</div>
+          <span class="font-black hidden sm:inline tracking-wide">PlaySphere</span>
         </a>
-        <span class="text-xs text-slate-500">· Room</span>
+        <span class="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-2">· Room</span>
       </div>
-      <a href="/lobby" class="text-sm text-slate-400 hover:text-slate-100">← Leave</a>
+      <a href="/lobby" class="text-sm font-bold text-slate-400 hover:text-white transition">← Leave</a>
     </div>
   </header>
 
   <main class="mx-auto max-w-6xl px-2 sm:px-4 py-3 sm:py-6">
 
-    <div id="selectorPanel" class="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 sm:p-5 mb-3 sm:mb-4">
+    <!-- GAME SELECTOR -->
+    <div id="selectorPanel" class="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 sm:p-5 mb-3 sm:mb-4 shadow-xl">
       <div class="flex items-center justify-between mb-2 sm:mb-3">
-        <div class="text-xs uppercase tracking-widest text-slate-500">Choose Your Game</div>
-        <div id="gameStatus" class="text-xs text-slate-500">Not selected</div>
+        <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-500 font-bold">Choose Your Game</div>
+        <div id="gameStatus" class="text-xs text-slate-500 font-bold">Not selected</div>
       </div>
-            <div class="grid grid-cols-3 gap-2 sm:gap-3">
-        <button type="button" data-game="dice"
-          class="game-card text-left rounded-xl border border-slate-800 bg-slate-800/40 hover:border-slate-600 p-3 sm:p-4 transition">
-          <div class="text-xl sm:text-2xl">🎲</div>
-          <div class="font-bold mt-1 text-sm sm:text-base">Roll-off</div>
-          <div class="text-[10px] sm:text-xs text-slate-400">Roll 2 dice. Highest wins.</div>
-        </button>
-        <button type="button" data-game="ludo"
-          class="game-card text-left rounded-xl border border-slate-800 bg-slate-800/40 hover:border-slate-600 p-3 sm:p-4 transition">
-          <div class="text-xl sm:text-2xl">🎯</div>
-          <div class="font-bold mt-1 text-sm sm:text-base">Ludo</div>
-          <div class="text-[10px] sm:text-xs text-slate-400">Classic board game.</div>
-        </button>
-        <button type="button" data-game="chess"
-          class="game-card text-left rounded-xl border border-slate-800 bg-slate-800/40 hover:border-slate-600 p-3 sm:p-4 transition">
-          <div class="text-xl sm:text-2xl">♟️</div>
-          <div class="font-bold mt-1 text-sm sm:text-base">Chess</div>
-          <div class="text-[10px] sm:text-xs text-slate-400">2-player strategy.</div>
-        </button>
+      <div class="grid grid-cols-3 gap-2 sm:gap-3">
+        <button type="button" data-game="dice" class="game-card text-left rounded-xl border border-slate-800 bg-slate-800/40 hover:border-slate-600 p-3 sm:p-4 transition"><div class="text-xl sm:text-2xl">🎲</div><div class="font-bold mt-1 text-sm sm:text-base">Roll-off</div><div class="text-[10px] sm:text-xs text-slate-400">Roll 2 dice. Highest wins.</div></button>
+        <button type="button" data-game="ludo" class="game-card text-left rounded-xl border border-slate-800 bg-slate-800/40 hover:border-slate-600 p-3 sm:p-4 transition"><div class="text-xl sm:text-2xl">🎯</div><div class="font-bold mt-1 text-sm sm:text-base">Ludo</div><div class="text-[10px] sm:text-xs text-slate-400">Classic board game.</div></button>
+        <button type="button" data-game="chess" class="game-card text-left rounded-xl border border-slate-800 bg-slate-800/40 hover:border-slate-600 p-3 sm:p-4 transition"><div class="text-xl sm:text-2xl">♟️</div><div class="font-bold mt-1 text-sm sm:text-base">Chess</div><div class="text-[10px] sm:text-xs text-slate-400">2-player strategy.</div></button>
       </div>
     </div>
 
-        <div id="diceArea" class="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/80 to-slate-900/40 p-3 sm:p-6">
-      <!-- Multi-player slots (renders 2, 3, or 4 cards) -->
-      <div id="playersRow" class="flex flex-wrap justify-center items-center gap-3 sm:gap-6">
-      </div>
-      <div class="mt-3 sm:mt-4 flex justify-center">
-        <div id="statusBadge" class="text-[10px] sm:text-xs px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 text-center">
-          Waiting for all ready
-        </div>
-      </div>
-      <div id="diceA" class="hidden"></div>
-      <div id="diceB" class="hidden"></div>
-      <div id="totalA" class="hidden"></div>
-      <div id="totalB" class="hidden"></div>
-      <div id="cardA" class="hidden"></div>
-      <div id="cardB" class="hidden"></div>
+    <!-- DICE AREA -->
+    <div id="diceArea" class="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/80 to-slate-900/40 p-3 sm:p-6 shadow-xl">
+      <div id="playersRow" class="flex flex-wrap justify-center items-center gap-3 sm:gap-6"></div>
+      <div class="mt-3 sm:mt-4 flex justify-center"><div id="statusBadge" class="text-[10px] sm:text-xs font-bold px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 text-center">Waiting for all ready</div></div>
+      <div id="diceA" class="hidden"></div><div id="diceB" class="hidden"></div><div id="totalA" class="hidden"></div><div id="totalB" class="hidden"></div><div id="cardA" class="hidden"></div><div id="cardB" class="hidden"></div>
       <div id="winnerBanner" class="hidden mt-4 sm:mt-6 text-center text-2xl sm:text-3xl font-extrabold pop"></div>
     </div>
 
-    <div id="ludoArea" class="hidden rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/80 to-slate-900/40 p-2 sm:p-4">
-      <div id="ludoContainer"></div>
-    </div>
-        <div id="chessArea" class="hidden rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/80 to-slate-900/40 p-2 sm:p-4">
-      <div id="chessContainer"></div>
-    </div>
+    <!-- LUDO AREA -->
+    <div id="ludoArea" class="hidden rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/80 to-slate-900/40 p-2 sm:p-4 shadow-xl"><div id="ludoContainer"></div></div>
+    
+    <!-- CHESS AREA -->
+    <div id="chessArea" class="hidden rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/80 to-slate-900/40 p-2 sm:p-4 shadow-xl"><div id="chessContainer"></div></div>
 
-    <div class="mt-3 sm:mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-3 sm:p-5">
+    <!-- WAGER + READY -->
+    <div class="mt-3 sm:mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-3 sm:p-5 shadow-xl">
       <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
         <div class="flex-1">
-          <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-500 mb-1.5 sm:mb-2">Wager</div>
+          <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-500 font-bold mb-1.5 sm:mb-2">Wager</div>
           <div class="flex items-center gap-2 sm:gap-3">
-            <input id="wagerSlider" type="range" min="0" max="100" step="5" value="0" class="flex-1 accent-purple-600" />
-            <div class="text-base sm:text-lg font-bold text-brand-500 w-14 sm:w-16 text-right">
-              <span id="wagerValue">0</span> PC
-            </div>
+            <input id="wagerSlider" type="range" min="0" max="100" step="5" value="0" class="flex-1 accent-brand-500" />
+            <div class="text-base sm:text-lg font-black text-brand-400 w-14 sm:w-16 text-right"><span id="wagerValue">0</span> PC</div>
           </div>
         </div>
-        <button id="readyBtn" class="rounded-lg bg-brand-600 hover:bg-brand-700 px-6 py-3 text-sm font-bold transition whitespace-nowrap">
-          I'm Ready
-        </button>
+        <button id="readyBtn" class="rounded-xl bg-brand-600 hover:bg-brand-500 px-6 py-3 text-sm font-bold transition whitespace-nowrap shadow-lg shadow-brand-600/20">I'm Ready</button>
       </div>
-      <p id="statusLine" class="mt-2 sm:mt-3 text-center text-xs sm:text-sm text-slate-400"></p>
+      <p id="statusLine" class="mt-2 sm:mt-3 text-center text-xs sm:text-sm text-slate-400 font-medium"></p>
     </div>
 
-    <!-- CHAT PANEL (hidden on mobile unless opened) -->
-    <div id="chatPanel" class="mt-3 sm:mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 flex-col h-[320px] sm:h-[320px] hidden sm:flex">
+    <!-- CHAT (desktop inline, mobile full-screen drawer) -->
+    <div id="chatPanel" class="mt-3 sm:mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 flex-col h-[320px] sm:h-[320px] hidden sm:flex shadow-xl">
       <div class="px-3 sm:px-4 py-3 border-b border-slate-800 flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <button id="chatPanelClose" type="button" class="text-slate-400 hover:text-slate-100 p-1 -ml-1">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div class="text-sm font-semibold">Chat</div>
+          <button id="chatPanelClose" type="button" class="text-slate-400 hover:text-slate-100 p-1 -ml-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg></button>
+          <div class="text-sm font-bold">Chat</div>
         </div>
-        <div class="text-xs text-slate-500" id="chatStatus">connecting…</div>
+        <div class="text-xs font-bold text-slate-500" id="chatStatus">connecting…</div>
       </div>
       <div id="chatMessages" class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2"></div>
       <form id="chatForm" class="border-t border-slate-800 p-2 sm:p-3 flex gap-2">
-        <input id="chatInput" type="text" maxlength="500" placeholder="Type a message…"
-          class="flex-1 rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500" />
-        <button type="submit" class="rounded-lg bg-brand-600 hover:bg-brand-700 px-4 py-2 text-sm font-semibold transition">Send</button>
+        <input id="chatInput" type="text" maxlength="500" placeholder="Type a message…" class="flex-1 rounded-lg bg-slate-950 border border-slate-800 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500 transition" />
+        <button type="submit" class="rounded-lg bg-brand-600 hover:bg-brand-500 px-4 py-2 text-sm font-bold transition shadow-lg shadow-brand-600/20">Send</button>
       </form>
     </div>
 
     <!-- FLOATING CHAT BUTTON (mobile only) -->
-    <button id="chatToggleBtn" type="button" class="hidden fixed bottom-4 right-4 z-50 rounded-full bg-brand-600 hover:bg-brand-700 shadow-xl w-14 h-14 items-center justify-center">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-      </svg>
+    <button id="chatToggleBtn" type="button" class="hidden fixed bottom-4 right-4 z-50 rounded-full bg-brand-600 hover:bg-brand-500 shadow-xl w-14 h-14 items-center justify-center">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
     </button>
   </main>
 
