@@ -15,16 +15,13 @@ export async function loadAdConfig() {
 export async function renderBanner(containerId) {
   const el = document.getElementById(containerId);
   if (!el) return;
-
   const cfg = await loadAdConfig();
   if (!cfg || !cfg.enabled || !cfg.show_banner) {
     el.classList.add("hidden");
     return;
   }
-
   el.classList.remove("hidden");
   el.innerHTML = "";
-
   if (cfg.banner_code && cfg.banner_code.trim()) {
     const tmp = document.createElement("div");
     tmp.innerHTML = cfg.banner_code;
@@ -68,9 +65,9 @@ export async function renderRewarded(containerId) {
           ${disabled ? "Done" : "Watch"}
         </button>
       </div>
-      <!-- Hidden Iframe Container -->
+      <!-- Ad Iframe Box -->
       <div id="adIframeContainer" class="hidden mt-4 h-[400px] w-full rounded-lg overflow-hidden border border-slate-700">
-        <iframe id="adIframe" src="about:blank" class="w-full h-full"></iframe>
+        <iframe id="adIframe" src="about:blank" class="w-full h-full" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
       </div>
     </div>`;
 
@@ -79,26 +76,25 @@ export async function renderRewarded(containerId) {
   const btn = el.querySelector("#rewardedBtn");
   const iframeContainer = el.querySelector("#adIframeContainer");
   const iframe = el.querySelector("#adIframe");
-  let timerStarted = false;
 
   btn.addEventListener("click", async () => {
     btn.disabled = true;
-    btn.textContent = "Watching...";
+    btn.textContent = "Loading Ad...";
     
     // 1. Load the ad in the iframe
     iframeContainer.classList.remove("hidden");
     iframe.src = AD_URL;
     
-    // 2. Start the 5-second timer
+    // 2. Wait 5 seconds so they actually see the ad
     let n = 5;
-    timerStarted = true;
+    btn.textContent = `⏱ ${n}s`;
     const t = setInterval(async () => {
       n -= 1;
       btn.textContent = `⏱ ${n}s`;
       if (n <= 0) {
         clearInterval(t);
         
-        // 3. Give the reward
+        // 3. Give the coins
         try {
           const res = await api.claimRewardedAd();
           if (res.ok) {
