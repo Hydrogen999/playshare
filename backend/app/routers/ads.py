@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -40,12 +40,19 @@ def admin_update(
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    s = update_settings(
-        db,
-        enabled=data.enabled,
-        banner_code=data.banner_code,
-        rewarded_code=data.rewarded_code,
-        rewarded_coins=data.rewarded_coins,
-        rewarded_daily_limit=data.rewarded_daily_limit,
-    )
-    return {"enabled": s.enabled, "rewarded_coins": s.rewarded_coins}
+    try:
+        s = update_settings(
+            db,
+            enabled=data.enabled,
+            banner_code=data.banner_code,
+            rewarded_code=data.rewarded_code,
+            rewarded_coins=data.rewarded_coins,
+            rewarded_daily_limit=data.rewarded_daily_limit,
+        )
+        if not s:
+            raise HTTPException(status_code=500, detail="Failed to update settings")
+            
+        return {"enabled": s.enabled, "rewarded_coins": s.rewarded_coins}
+    except Exception as e:
+        print(f"[ad save error] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
