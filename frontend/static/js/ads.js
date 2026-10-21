@@ -12,21 +12,6 @@ export async function loadAdConfig() {
   }
 }
 
-/**
- * Safely injects HTML (including <script> tags) so the ad network actually runs.
- */
-function injectHTML(container, html) {
-  const tmp = document.createElement("div");
-  tmp.innerHTML = html;
-  tmp.querySelectorAll("script").forEach(old => {
-    const s = document.createElement("script");
-    [...old.attributes].forEach(a => s.setAttribute(a.name, a.value));
-    s.textContent = old.textContent;
-    old.replaceWith(s);
-  });
-  container.append(...tmp.childNodes);
-}
-
 export async function renderBanner(containerId) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -41,14 +26,15 @@ export async function renderBanner(containerId) {
   el.innerHTML = "";
 
   if (cfg.banner_code && cfg.banner_code.trim()) {
-    // Use the safe injector
-    injectHTML(el, cfg.banner_code);
-  } else {
-    el.innerHTML = `
-      <div class="rounded-xl border-2 border-dashed border-slate-700 bg-slate-900/40 p-4 text-center">
-        <div class="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Advertisement</div>
-        <div class="text-sm text-slate-400 mt-2">📢 Ad slot</div>
-      </div>`;
+    const tmp = document.createElement("div");
+    tmp.innerHTML = cfg.banner_code;
+    tmp.querySelectorAll("script").forEach(old => {
+      const s = document.createElement("script");
+      [...old.attributes].forEach(a => s.setAttribute(a.name, a.value));
+      s.textContent = old.textContent;
+      old.replaceWith(s);
+    });
+    el.append(...tmp.childNodes);
   }
 }
 
@@ -67,64 +53,69 @@ export async function renderRewarded(containerId) {
   const coins = cfg.rewarded_coins;
   const disabled = remaining <= 0;
 
+  // YOUR ADSTERRA SMARTLINK
+  const AD_URL = "https://asiafilm.org/4/c94c08c3b62dc0e62da807949030c02d";
+
   el.innerHTML = `
     <div class="rounded-2xl border border-emerald-500/40 bg-gradient-to-br from-emerald-500/10 to-slate-900/60 p-4 shadow-lg">
       <div class="flex items-center justify-between gap-3">
         <div>
           <div class="text-xs font-bold text-emerald-400 uppercase tracking-widest">🎬 Watch & Earn</div>
-          <div class="text-sm text-slate-300 mt-1 font-semibold">Watch a short video → get <span class="text-emerald-400 font-bold">${coins} PlayCoins</span></div>
+          <div class="text-sm text-slate-300 mt-1 font-semibold">Watch the ad below → get <span class="text-emerald-400 font-bold">${coins} PlayCoins</span></div>
           <div class="text-[11px] text-slate-500 mt-1">${remaining} of ${cfg.rewarded_daily_limit} remaining today</div>
         </div>
         <button id="rewardedBtn" class="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-5 py-3 text-sm font-black whitespace-nowrap shadow-lg transition ${disabled ? "opacity-50 cursor-not-allowed" : ""}" ${disabled ? "disabled" : ""}>
           ${disabled ? "Done" : "Watch"}
         </button>
       </div>
+      <!-- Hidden Iframe Container -->
+      <div id="adIframeContainer" class="hidden mt-4 h-[400px] w-full rounded-lg overflow-hidden border border-slate-700">
+        <iframe id="adIframe" src="about:blank" class="w-full h-full"></iframe>
+      </div>
     </div>`;
 
   if (disabled) return;
 
   const btn = el.querySelector("#rewardedBtn");
+  const iframeContainer = el.querySelector("#adIframeContainer");
+  const iframe = el.querySelector("#adIframe");
+  let timerStarted = false;
+
   btn.addEventListener("click", async () => {
-    if (!cfg.rewarded_code || !cfg.rewarded_code.trim()) {
-      alert("No rewarded ad code configured in Admin panel.");
-      return;
-    }
-
     btn.disabled = true;
-    btn.textContent = "Loading Ad...";
-
-    // 1. Inject the Adsterra Popunder code invisibly
-    const adContainer = document.createElement("div");
-    adContainer.style.display = "none";
-    el.appendChild(adContainer);
+    btn.textContent = "Watching...";
     
-    try {
-      injectHTML(adContainer, cfg.rewarded_code);
-    } catch (e) {
-      console.error("Ad script failed", e);
-    }
-
-    // 2. Wait 3 seconds to simulate "watching", then let them claim
-    // Adsterra Popunders don't have a perfect "watched" callback on the web,
-    // so this is the safest way to give the reward without breaking rules.
-    btn.textContent = "Verifying...";
-    setTimeout(async () => {
-      try {
-        const res = await api.claimRewardedAd();
-        if (res.ok) {
-          _config = null; // reset cache
-          alert(`🎉 +${res.coins} PlayCoins added!`);
-          window.location.reload();
-        } else {
-          alert(res.error || "Limit reached");
+    // 1. Load the ad in the iframe
+    iframeContainer.classList.remove("hidden");
+    iframe.src = AD_URL;
+    
+    // 2. Start the 5-second timer
+    let n = 5;
+    timerStarted = true;
+    const t = setInterval(async () => {
+      n -= 1;
+      btn.textContent = `⏱ ${n}s`;
+      if (n <= 0) {
+        clearInterval(t);
+        
+        // 3. Give the reward
+        try {
+          const res = await api.claimRewardedAd();
+          if (res.ok) {
+            _config = null; 
+            alert(`🎉 +${res.coins} PlayCoins added!`);
+            window.location.reload();
+          } else {
+            alert(res.error || "Limit reached");
+            btn.disabled = false;
+            btn.textContent = "Watch";
+          }
+        } catch (err) {
+          alert("Server error. Try again.");
           btn.disabled = false;
           btn.textContent = "Watch";
         }
-      } catch (err) {
-        alert(err.message);
-        btn.disabled = false;
-        btn.textContent = "Watch";
       }
-    }, 3000);
+    }, 1000);
   });
 }
