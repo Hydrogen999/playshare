@@ -2,6 +2,19 @@ import { api } from "./api.js";
 
 const $ = (id) => document.getElementById(id);
 
+// Track which currency is selected
+let currentCurrency = "ngn"; 
+
+const NGN_PLANS = [
+  { id: "monthly", label: "Premium Monthly", price_label: "₦700 / month" },
+  { id: "yearly", label: "Premium Yearly", price_label: "₦7,000 / year", savings: "Save ₦1,400" }
+];
+
+const USD_PLANS = [
+  { id: "monthly", label: "Premium Monthly", price_label: "$5.00 / month" },
+  { id: "yearly", label: "Premium Yearly", price_label: "$50.00 / year", savings: "Save $10.00" }
+];
+
 function showMsg(text, type = "info") {
   const el = $("msg");
   const colors = {
@@ -14,12 +27,10 @@ function showMsg(text, type = "info") {
   el.classList.remove("hidden");
 }
 
-function renderPlans(plans) {
+function renderPlans() {
   const grid = $("plansGrid");
-  if (!plans || plans.length === 0) {
-    grid.innerHTML = `<div class="col-span-full text-center text-slate-500 text-sm py-8">No plans available.</div>`;
-    return;
-  }
+  const plans = currentCurrency === "usd" ? USD_PLANS : NGN_PLANS;
+  
   grid.innerHTML = plans.map((p) => {
     const isYearly = p.id === "yearly";
     return `
@@ -43,7 +54,18 @@ async function startSubscribe(planId, btn) {
   btn.disabled = true;
   showMsg("Opening checkout…", "info");
   try {
-    const res = await api.premiumSubscribe(planId);
+    let res;
+    if (currentCurrency === "usd") {
+      // Flutterwave Checkout
+      res = await api.request("/api/v1/premium/subscribe/flw", { 
+        method: "POST", 
+        body: { plan_id: planId } 
+      });
+    } else {
+      // Paystack Checkout
+      res = await api.premiumSubscribe(planId);
+    }
+
     if (res.authorization_url) {
       window.location.href = res.authorization_url;
     } else {
@@ -67,13 +89,16 @@ async function showActive(expiresIso) {
 
 async function checkCallback() {
   const params = new URLSearchParams(location.search);
-  const ref = params.get("reference") || params.get("trxref");
+  // Paystack uses "reference", Flutterwave uses "tx_ref"
+  const ref = params.get("reference") || params.get("trxref") || params.get("tx_ref");
+  
   if (!ref) return;
 
   showMsg("Verifying subscription…", "info");
 
   for (let i = 0; i < 5; i++) {
     try {
+      // We try to verify it on our backend
       const res = await api.premiumVerify(ref);
       if (res.ok) {
         showMsg("🎉 Welcome to Premium! Refresh to see your crown.", "success");
@@ -87,6 +112,28 @@ async function checkCallback() {
   showMsg("Subscription is still processing. Refresh in a moment.", "info");
 }
 
+// --- TAB SWITCHING LOGIC ---
+function setupTabs() {
+  const tabNgn = $("tabNgn");
+  const tabUsd = $("tabUsd");
+
+  if (!tabNgn || !tabUsd) return;
+
+  tabNgn.addEventListener("click", () => {
+    currentCurrency = "ngn";
+    tabNgn.className = "px-5 py-2.5 rounded-lg font-bold text-sm bg-brand-600";
+    tabUsd.className = "px-5 py-2.5 rounded-lg font-bold text-sm bg-slate-800 text-slate-400 hover:text-slate-200";
+    renderPlans();
+  });
+
+  tabUsd.addEventListener("click", () => {
+    currentCurrency = "usd";
+    tabUsd.className = "px-5 py-2.5 rounded-lg font-bold text-sm bg-brand-600";
+    tabNgn.className = "px-5 py-2.5 rounded-lg font-bold text-sm bg-slate-800 text-slate-400 hover:text-slate-200";
+    renderPlans();
+  });
+}
+
 async function boot() {
   if (!api.getToken()) { window.location.href = "/"; return; }
 
@@ -98,13 +145,9 @@ async function boot() {
     }
   } catch {}
 
-  // Plans
-  try {
-    const data = await api.premiumPlans();
-    renderPlans(data.plans);
-  } catch (err) {
-    showMsg(err.message, "error");
-  }
+  // Set up the currency tabs and load plans
+  setupTabs();
+  renderPlans();
 
   await checkCallback();
 }
