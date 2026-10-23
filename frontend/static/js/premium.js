@@ -6,13 +6,13 @@ const $ = (id) => document.getElementById(id);
 let currentCurrency = "ngn"; 
 
 const NGN_PLANS = [
-  { id: "monthly", label: "Premium Monthly", price_label: "₦700 / month" },
-  { id: "yearly", label: "Premium Yearly", price_label: "₦7,000 / year", savings: "Save ₦1,400" }
+  { id: "monthly", label: "Premium Monthly", price_label: "₦1000 / month" },
+  { id: "yearly", label: "Premium Yearly", price_label: "₦10,000 / year", savings: "Save ₦2000" }
 ];
 
 const USD_PLANS = [
-  { id: "monthly", label: "Premium Monthly", price_label: "$5.00 / month" },
-  { id: "yearly", label: "Premium Yearly", price_label: "$50.00 / year", savings: "Save $10.00" }
+  { id: "monthly", label: "Premium Monthly", price_label: "$3.50 / month" },
+  { id: "yearly", label: "Premium Yearly", price_label: "$35.50 / year", savings: "Save $6.50" }
 ];
 
 function showMsg(text, type = "info") {
