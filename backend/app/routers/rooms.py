@@ -10,8 +10,11 @@ from app.deps import get_current_user
 from app.models.room import Room, RoomMember
 from app.models.user import User
 from app.schemas.room import RoomMemberOut, RoomOut
+from app.services import presence as presence_svc
 
 router = APIRouter(prefix="/api/v1/rooms", tags=["rooms"])
+
+ALLOWED_GAMES = {"ludo", "dice", "chess"}
 
 
 def _generate_code() -> str:
@@ -46,6 +49,12 @@ class CreateRoomIn(BaseModel):
     game_slug: str = "ludo"
     max_players: int = 4
     wager: int = 0
+    is_public: bool = True          # NEW — private rooms supported
+
+
+# ---------------------------------------------------------------------------
+# CREATE
+# ---------------------------------------------------------------------------
 
 
 @router.post("")
@@ -54,8 +63,12 @@ def create_public_room(
     me: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Create a public multi-player room. Others can join via /public list or code."""
-    if data.game_slug not in ("ludo", "dice", "chess"):
+    """
+    Create a room. Set `is_public=false` to make a private room.
+    Both public and private rooms share the same 6-char code so either can
+    be joined via /join/{code}.
+    """
+    if data.game_slug not in ALLOWED_GAMES:
         raise HTTPException(status_code=400, detail="Invalid game")
     if data.max_players < 2 or data.max_players > 4:
         raise HTTPException(status_code=400, detail="max_players must be 2-4")
@@ -64,6 +77,13 @@ def create_public_room(
     if data.game_slug == "chess" and data.max_players != 2:
         raise HTTPException(status_code=400, detail="Chess is 2-player only")
 
+    # Clamp wager to a sane range
+    try:
+        wager = max(0, min(int(data.wager or 0), 10000))
+    except (TypeError, ValueError):
+        wager = 0
+
+    # Generate unique code
     code = _generate_code()
     while db.query(Room).filter(Room.code == code).first():
         code = _generate_code()
@@ -71,10 +91,10 @@ def create_public_room(
     room = Room(
         game_slug=data.game_slug,
         status="waiting",
-        wager=0,
+        wager=wager,
         created_by=me.id,
         code=code,
-        is_public=True,
+        is_public=bool(data.is_public),
         max_players=data.max_players,
     )
     db.add(room)
@@ -83,7 +103,21 @@ def create_public_room(
     db.commit()
     db.refresh(room)
 
-    return {"id": room.id, "code": room.code, "game_slug": room.game_slug}
+    # Issue reconnect token for the host
+    token = presence_svc.get_or_create_token(db, room.id, me.id)
+
+    return {
+        "id": room.id,
+        "code": room.code,
+        "game_slug": room.game_slug,
+        "is_public": room.is_public,
+        "reconnect_token": token,
+    }
+
+
+# ---------------------------------------------------------------------------
+# LIST
+# ---------------------------------------------------------------------------
 
 
 @router.get("/public")
@@ -119,14 +153,22 @@ def list_public_rooms(
     return {"rooms": out}
 
 
+# ---------------------------------------------------------------------------
+# JOIN BY CODE  (works for BOTH public and private rooms)
+# ---------------------------------------------------------------------------
+
+
 @router.post("/join/{code}")
 def join_public_room(
     code: str,
     me: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Join a public room by code."""
-    room = db.query(Room).filter(Room.code == code, Room.is_public.is_(True)).first()
+    """
+    Join any room by code — public OR private.
+    Private rooms are simply hidden from /public but still joinable by code.
+    """
+    room = db.query(Room).filter(Room.code == code).first()
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
     if room.status != "waiting":
@@ -138,7 +180,12 @@ def join_public_room(
         .first()
     )
     if existing:
-        return {"id": room.id, "code": room.code}
+        token = presence_svc.get_or_create_token(db, room.id, me.id)
+        return {
+            "id": room.id,
+            "code": room.code,
+            "reconnect_token": token,
+        }
 
     count = db.query(RoomMember).filter(RoomMember.room_id == room.id).count()
     if count >= (room.max_players or 4):
@@ -146,7 +193,18 @@ def join_public_room(
 
     db.add(RoomMember(room_id=room.id, user_id=me.id))
     db.commit()
-    return {"id": room.id, "code": room.code}
+
+    token = presence_svc.get_or_create_token(db, room.id, me.id)
+    return {
+        "id": room.id,
+        "code": room.code,
+        "reconnect_token": token,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET SINGLE ROOM
+# ---------------------------------------------------------------------------
 
 
 @router.get("/{room_id}", response_model=RoomOut)
@@ -162,3 +220,52 @@ def get_room(
     if me.id not in member_ids and not room.is_public:
         raise HTTPException(status_code=403, detail="Not a member")
     return _room_out(db, room)
+
+
+# ---------------------------------------------------------------------------
+# RECONNECT  (resume after a dropped WS)
+# ---------------------------------------------------------------------------
+
+
+class ReconnectIn(BaseModel):
+    reconnect_token: str | None = None
+
+
+@router.post("/{room_id}/reconnect")
+def reconnect_room(
+    room_id: str,
+    body: ReconnectIn,
+    me: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Validate a reconnect token and return room state so the client can resume.
+
+    - If token is missing or invalid → 401 (except for first-time members: token
+      is issued silently).
+    - If user is not a member of the room → 403.
+    - Always returns a fresh (or existing) reconnect_token.
+    """
+    room = db.get(Room, room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    member = (
+        db.query(RoomMember)
+        .filter(RoomMember.room_id == room_id, RoomMember.user_id == me.id)
+        .first()
+    )
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this room")
+
+    token = (body.reconnect_token or "").strip()
+    if token and not presence_svc.validate_token(db, room_id, me.id, token):
+        raise HTTPException(status_code=401, detail="Invalid reconnect token")
+
+    new_token = presence_svc.get_or_create_token(db, room_id, me.id)
+
+    return {
+        "ok": True,
+        "room": _room_out(db, room),
+        "reconnect_token": new_token,
+    }
