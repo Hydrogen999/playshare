@@ -99,12 +99,20 @@ async function refreshRooms() {
   }
 }
 
-async function createRoom(gameSlug, maxPlayers) {
+async function createRoom(gameSlug, maxPlayers, isPublic = true) {
   unlockAudio();
   try { sfx.click(); } catch {}
   try {
-    const res = await api.createRoom({ game_slug: gameSlug, max_players: maxPlayers });
-    showToast("Room created! Redirecting…");
+    const res = await api.createRoom({
+      game_slug: gameSlug,
+      max_players: maxPlayers,
+      is_public: isPublic,
+    });
+    // Store reconnect token from server
+    if (res.reconnect_token) {
+      localStorage.setItem(`ps_rc_${res.id}`, res.reconnect_token);
+    }
+    showToast(isPublic ? "Public room created!" : "Private room created — share the code!");
     try { sfx.success(); } catch {}
     setTimeout(() => { window.location.href = `/room?id=${res.id}`; }, 400);
   } catch (err) {
@@ -112,6 +120,7 @@ async function createRoom(gameSlug, maxPlayers) {
     showToast(err.message);
   }
 }
+
 
 async function joinRoom(code) {
   unlockAudio();
@@ -167,5 +176,9 @@ function boot() {
   refreshRooms();
   pollTimer = setInterval(refreshRooms, 6000);
 }
-
+const privateLudoBtn = $("createPrivateLudoBtn");
+  const privateChessBtn = $("createPrivateChessBtn");
+  if (privateLudoBtn) privateLudoBtn.addEventListener("click", () => createRoom("ludo", 4, false));
+  if (privateChessBtn) privateChessBtn.addEventListener("click", () => createRoom("chess", 2, false));
 boot();
+  
