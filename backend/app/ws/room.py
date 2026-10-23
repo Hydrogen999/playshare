@@ -11,6 +11,7 @@ from app.models.room import Message, Room, RoomMember
 from app.models.user import User
 from app.redis_client import get_redis
 from app.security import decode_token
+from app.services import presence as presence_svc
 from app.services.dice import DiceError, play_match
 from app.services.elo import new_ratings as elo_new_ratings, tier_for as elo_tier
 from app.services.games.chess import (
@@ -115,11 +116,9 @@ class RoomHub:
             self.local.get(room_id, {}).pop(user_id, None)
 
     async def send_to_user(self, room_id: str, user_id: str, raw: dict):
-        # Try local first
         if user_id in self.local.get(room_id, {}):
             await self.send_local(room_id, user_id, raw)
         else:
-            # Fallback to Redis
             await self.publish(room_id, raw, target=user_id)
 
     async def join(self, room_id: str, user_id: str, ws: WebSocket):
@@ -387,7 +386,13 @@ def _update_chess_elo(db: Session, st: dict, outcome: str) -> dict:
 
 
 @router.websocket("/ws/room/{room_id}")
-async def room_ws(ws: WebSocket, room_id: str, token: str = Query(...)):
+async def room_ws(
+    ws: WebSocket,
+    room_id: str,
+    token: str = Query(...),
+    reconnect_token: str | None = Query(None),     # NEW — optional reconnect token
+):
+    # ---------- AUTH ----------
     try:
         payload = decode_token(token)
     except jwt.PyJWTError:
@@ -399,6 +404,7 @@ async def room_ws(ws: WebSocket, room_id: str, token: str = Query(...)):
         await ws.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
+    # ---------- LOAD INITIAL STATE ----------
     db: Session = SessionLocal()
     try:
         user = db.get(User, user_id)
@@ -408,6 +414,11 @@ async def room_ws(ws: WebSocket, room_id: str, token: str = Query(...)):
             return
         members = db.query(RoomMember).filter(RoomMember.room_id == room_id).all()
         if user_id not in {m.user_id for m in members}:
+            await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        # Reconnect-token validation (if provided)
+        if reconnect_token and not presence_svc.validate_token(db, room_id, user_id, reconnect_token):
             await ws.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
@@ -429,6 +440,7 @@ async def room_ws(ws: WebSocket, room_id: str, token: str = Query(...)):
             "status": room.status, "wager": room.wager,
             "code": room.code,
             "tournament_match_id": room.tournament_match_id,
+            "is_public": room.is_public,
         }
         pending = _ensure_pending_match(db, room)
         match_payload = _match_payload(pending) if pending else None
@@ -453,12 +465,25 @@ async def room_ws(ws: WebSocket, room_id: str, token: str = Query(...)):
     finally:
         db.close()
 
+    # ---------- ACCEPT + PRESENCE ONLINE ----------
     await ws.accept()
+
+    db_p = SessionLocal()
+    try:
+        issue_token = presence_svc.get_or_create_token(db_p, room_id, user_id)
+        await presence_svc.mark_online(
+            db_p, room_id, user_id, reconnect_token or issue_token
+        )
+    finally:
+        db_p.close()
+
     await hub.join(room_id, user_id, ws)
 
+    # ---------- SEND INIT ----------
     await ws.send_text(json.dumps({
         "type": "room:init",
         "you": user_id,
+        "reconnect_token": issue_token,     # NEW
         "room": room_meta,
         "members": members_payload,
         "messages": msgs_payload,
@@ -473,6 +498,7 @@ async def room_ws(ws: WebSocket, room_id: str, token: str = Query(...)):
         exclude=user_id,
     )
 
+    # ---------- MESSAGE LOOP ----------
     try:
         while True:
             raw = await ws.receive_text()
@@ -482,6 +508,16 @@ async def room_ws(ws: WebSocket, room_id: str, token: str = Query(...)):
                 continue
 
             mtype = msg.get("type")
+
+            # ---------- HEARTBEAT (keeps presence alive) ----------
+            if mtype == "presence:ping":
+                db_h: Session = SessionLocal()
+                try:
+                    await presence_svc.mark_online(db_h, room_id, user_id)
+                finally:
+                    db_h.close()
+                await ws.send_text(json.dumps({"type": "presence:pong"}))
+                continue
 
             # ---------- PING ----------
             if mtype == "ping":
@@ -1035,8 +1071,16 @@ async def room_ws(ws: WebSocket, room_id: str, token: str = Query(...)):
     except WebSocketDisconnect:
         pass
     finally:
+        # ---------- CLEANUP + PRESENCE OFFLINE ----------
         await hub.leave(room_id, user_id)
+
+        db_off: Session = SessionLocal()
+        try:
+            await presence_svc.mark_offline(db_off, room_id, user_id)
+        finally:
+            db_off.close()
+
         await hub.publish(room_id, {
-            "type": "room:player_left",
+            "type": "room:player_disconnected",   # renamed from player_left
             "user_id": user_id,
         })
