@@ -7,6 +7,12 @@ import { sfx, unlockAudio } from "./sounds.js";
 const params = new URLSearchParams(location.search);
 const roomId = params.get("id");
 
+
+const RECONNECT_KEY = `ps_rc_${roomId}`;
+let reconnectToken = localStorage.getItem(RECONNECT_KEY) || null;
+let reconnectAttempts = 0;
+let reconnectBanner = null;
+
 const $ = (id) => document.getElementById(id);
 const selectorPanel = $("selectorPanel");
 const gameStatus = $("gameStatus");
@@ -78,6 +84,17 @@ function renderRoomCodeBanner(room) {
   const main = document.querySelector("main");
   if (main) main.insertBefore(banner, main.firstChild);
 
+    document.getElementById("shareRoomBtn")?.addEventListener("click", async () => {
+    const link = `${location.origin}/join?code=${room.code}`;
+    const text = `Join my PlaySphere room! 🎮 Code: ${room.code}\n${link}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: "PlaySphere Room", text, url: link }); }
+      catch {}
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+    }
+  });
+
   document.getElementById("copyRoomCodeBtn")?.addEventListener("click", async () => {
     const link = `${location.origin}/join?code=${room.code}`;
     try { await navigator.clipboard.writeText(link); } catch {
@@ -97,6 +114,30 @@ function updateGameCard(slug) {
   const labels = { dice: "Roll-off", ludo: "Ludo", chess: "Chess" };
   gameStatus.textContent = slug ? `Selected: ${labels[slug] || slug}` : "Not selected";
   showGameArea(slug);
+}
+
+
+function showReconnectBanner(text, color = "amber") {
+  if (!reconnectBanner) {
+    reconnectBanner = document.createElement("div");
+    reconnectBanner.id = "reconnectBanner";
+    reconnectBanner.className =
+      "fixed top-14 left-1/2 -translate-x-1/2 z-50 rounded-lg px-4 py-2 text-xs font-bold shadow-lg transition";
+    document.body.appendChild(reconnectBanner);
+  }
+  const colors = {
+    amber: "bg-amber-500/90 text-slate-900",
+    red: "bg-red-500/90 text-white",
+    green: "bg-emerald-500/90 text-slate-900",
+  };
+  reconnectBanner.className =
+    `fixed top-14 left-1/2 -translate-x-1/2 z-50 rounded-lg px-4 py-2 text-xs font-bold shadow-lg transition ${colors[color]}`;
+  reconnectBanner.textContent = text;
+  reconnectBanner.style.display = "block";
+}
+
+function hideReconnectBanner() {
+  if (reconnectBanner) reconnectBanner.style.display = "none";
 }
 
 function showGameArea(slug) {
@@ -254,12 +295,18 @@ function ensureChessBoard() {
 
 function connectWebSocket(token) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${proto}//${location.host}/ws/room/${encodeURIComponent(roomId)}?token=${encodeURIComponent(token)}`;
+ let url = `${proto}//${location.host}/ws/room/${encodeURIComponent(roomId)}?token=${encodeURIComponent(token)}`;
+if (reconnectToken) url += `&reconnect_token=${encodeURIComponent(reconnectToken)}`;
   ws = new WebSocket(url);
 
   ws.addEventListener("open", () => { 
     chatStatus.textContent = "● connected"; 
     chatStatus.className = "text-xs text-emerald-400";
+        reconnectAttempts = 0;
+    if (reconnectBanner) {
+      showReconnectBanner("✓ Reconnected", "green");
+      setTimeout(hideReconnectBanner, 1500);
+    }
   });
 
   ws.addEventListener("message", (ev) => {
@@ -268,6 +315,10 @@ function connectWebSocket(token) {
 
     switch (msg.type) {
       case "room:init": {
+        if (msg.reconnect_token) {
+          reconnectToken = msg.reconnect_token;
+          localStorage.setItem(RECONNECT_KEY, reconnectToken);
+        }
         members = msg.members; renderMembers();
         for (const m of msg.messages) addMessage(m);
         if (msg.match) { currentMatch = msg.match; wagerSlider.value = msg.match.wager; wagerValue.textContent = msg.match.wager; }
@@ -290,6 +341,13 @@ function connectWebSocket(token) {
         setStatus("Starting…", "purple"); 
         document.getElementById("shareResultDiv")?.classList.add("hidden");
         break;
+       case "room:player_disconnected": {
+        const m = members.find((x) => x.user_id === msg.user_id);
+        if (m) {
+          setStatus(`${m.username} disconnected — waiting…`, "purple");
+        }
+        break;
+      }
       case "room:wager_update": currentMatch = msg.match; wagerSlider.value = msg.match.wager; wagerValue.textContent = msg.match.wager; break;
       case "room:game_update": updateGameCard(msg.game_slug); break;
       case "match:result": animateRoll(msg.result); break;
@@ -340,9 +398,22 @@ function connectWebSocket(token) {
     }
   });
 
-  ws.addEventListener("close", () => { 
-    chatStatus.textContent = "● disconnected"; 
+  ws.addEventListener("close", () => {
+    chatStatus.textContent = "● disconnected";
     chatStatus.className = "text-xs text-red-400";
+
+    // Auto-reconnect with backoff
+    if (reconnectAttempts < 5) {
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 15000);
+      reconnectAttempts++;
+      showReconnectBanner(`⚠️ Reconnecting… (${reconnectAttempts}/5)`, "amber");
+      setTimeout(() => {
+        const t = api.getToken();
+        if (t) connectWebSocket(t);
+      }, delay);
+    } else {
+      showReconnectBanner("❌ Connection lost — refresh to retry", "red");
+    }
   });
 }
 
