@@ -14,3 +14,4 @@ from app.models.token import LedgerEntry, LedgerTransaction, TokenAccount  # noq
 from app.models.tournament import Tournament, TournamentMatch, TournamentPlayer  # noqa: F401
 from app.models.user import Profile, User  # noqa: F401
 from app.models.xp import XPEvent  # noqa: F401
+from app.models.presence import RoomPresence  # noqa: F401
