@@ -2,172 +2,215 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Lobby · PlaySphere</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
     theme: { extend: {
-      colors: { brand: { 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6' } },
+      colors: { brand: { 400: '#a78bfa', 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6' } },
       fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
     } },
   };
 </script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-  html, body { overscroll-behavior: none; }
-  #world {
-    background:
-      radial-gradient(circle at 20% 20%, rgba(124,58,237,0.35), transparent 40%),
-      radial-gradient(circle at 80% 80%, rgba(236,72,153,0.25), transparent 40%),
-      #0b0f19;
+  /* Premium Dark Lounge Background */
+  #world { 
+    background: 
+      radial-gradient(circle at 50% 0%, rgba(124,58,237,0.15), transparent 60%),
+      radial-gradient(circle at 10% 90%, rgba(236,72,153,0.08), transparent 50%),
+      #060b14;
     touch-action: none;
+    box-shadow: inset 0 0 100px rgba(0,0,0,0.8);
   }
+  
+  /* Subtle holographic grid floor */
   #world::before {
     content: ""; position: absolute; inset: 0;
     background-image:
-      linear-gradient(rgba(148,163,184,0.08) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(148,163,184,0.08) 1px, transparent 1px);
-    background-size: 60px 60px;
+      linear-gradient(rgba(124,58,237,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124,58,237,0.08) 1px, transparent 1px);
+    background-size: 80px 80px;
+    background-position: center;
     pointer-events: none;
+    mask-image: radial-gradient(circle at center, black 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(circle at center, black 30%, transparent 80%);
   }
+
+  /* Modern Avatar Nodes */
   .avatar-node {
     position: absolute;
     transform: translate(-50%, -50%);
     transition: left 0.08s linear, top 0.08s linear;
-    cursor: pointer;
-    z-index: 2;
+    cursor: pointer; z-index: 2;
+    display: flex; flex-direction: column; align-items: center;
   }
   .avatar-node.me { z-index: 5; }
+  
+  /* Glowing Name Tag */
   .avatar-node .label {
-    position: absolute; left: 50%; transform: translateX(-50%);
-    top: calc(100% + 6px);
-    font-size: 11px; padding: 2px 8px; border-radius: 9999px;
-    background: rgba(15,23,42,0.85); color: #e2e8f0;
-    white-space: nowrap; border: 1px solid rgba(148,163,184,0.2);
+    margin-top: 8px;
+    font-size: 11px; font-weight: 700;
+    padding: 4px 12px; 
+    border-radius: 99px;
+    background: rgba(15,23,42,0.85); 
+    color: #e2e8f0;
+    white-space: nowrap; 
+    border: 1px solid rgba(124,58,237,0.3);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    letter-spacing: 0.5px;
+    transition: border-color 0.2s;
   }
-  .avatar-node.me .label { border-color: #7c3aed; }
+  .avatar-node:hover .label { border-color: #a78bfa; color: #fff; }
+  .avatar-node.me .label { 
+    border-color: #7c3aed; 
+    background: rgba(124,58,237,0.2); 
+    color: #a78bfa;
+    box-shadow: 0 0 15px rgba(124,58,237,0.4);
+  }
 
-  /* Mobile: bigger world, smaller labels */
+  /* Mobile Chat Drawer */
   @media (max-width: 767px) {
-    .avatar-node .label { font-size: 10px; padding: 1px 6px; top: calc(100% + 4px); }
+    .avatar-node .label { font-size: 10px; padding: 3px 8px; }
     #world { border-radius: 0; }
   }
 </style>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
 
-  <header class="border-b border-slate-900 sticky top-0 z-30 bg-slate-950/95 backdrop-blur">
-    <div class="mx-auto max-w-6xl px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between">
+  <header class="border-b border-slate-800/50 sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md">
+    <div class="mx-auto max-w-6xl px-3 sm:px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-2 sm:gap-3">
         <a href="/dashboard" class="flex items-center gap-2">
-          <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold">P</div>
-          <span class="font-bold hidden sm:inline">PlaySphere</span>
+          <div class="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-500 to-fuchsia-600 grid place-items-center font-black shadow-lg shadow-brand-500/20">P</div>
+          <span class="font-black hidden sm:inline tracking-wide">PlaySphere</span>
         </a>
-        <span class="text-xs text-slate-500 hidden sm:inline">· Lobby</span>
+        <span class="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-2">· Lobby</span>
       </div>
-      <div class="flex items-center gap-2 sm:gap-3">
-        <span id="onlineCount" class="text-xs text-emerald-400">● connecting…</span>
-        <div id="myAvatarSmall"></div>
-        <a href="/dashboard" class="text-sm text-slate-400 hover:text-slate-100">Exit</a>
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800">
+          <span id="onlineCount" class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+            <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span> connecting…
+          </span>
+        </div>
+        <div id="myAvatarSmall" class="hidden sm:block"></div>
+        <a href="/dashboard" class="text-sm font-bold text-slate-400 hover:text-white transition">Exit</a>
       </div>
     </div>
   </header>
 
-    <main class="mx-auto max-w-6xl px-0 sm:px-4 py-0 sm:py-4">
-    <div id="world" class="relative w-full sm:aspect-video sm:rounded-2xl sm:border sm:border-slate-800 overflow-hidden"
-         style="height: calc(100vh - 6rem);">
+  <main class="mx-auto max-w-6xl px-0 sm:px-4 py-0 sm:py-6">
+    
+    <!-- The World (Holographic Lounge) -->
+    <div id="world" class="relative w-full sm:aspect-video sm:rounded-3xl sm:border border-slate-800 overflow-hidden shadow-2xl"
+         style="height: calc(100vh - 12rem);">
     </div>
+    
+    <p class="hidden sm:block mt-4 text-xs font-medium text-slate-500 text-center tracking-wide">
+      Move with <kbd class="px-2 py-1 rounded-md bg-slate-800 border border-slate-700 text-slate-300">W A S D</kbd>
+      or <kbd class="px-2 py-1 rounded-md bg-slate-800 border border-slate-700 text-slate-300">↑ ← ↓ →</kbd> · Click a player to interact.
+    </p>
+    <p class="sm:hidden absolute bottom-4 left-0 right-0 text-xs font-medium text-slate-500 text-center pointer-events-none">
+      Drag anywhere to move · Tap a player
+    </p>
 
-        <!-- PUBLIC ROOMS -->
-    <section class="mt-4 sm:mt-6 mx-3 sm:mx-0 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
-      <div class="flex items-center justify-between mb-3">
-        <div class="text-xs uppercase tracking-widest text-slate-500">🚪 Open Rooms</div>
-        <div class="flex items-center gap-2">
-          <div id="roomsMsg" class="hidden text-[11px] text-brand-400"></div>
-          <button id="refreshRoomsBtn" class="text-[10px] text-slate-400 hover:text-slate-100 underline">refresh</button>
+    <!-- PUBLIC ROOMS & CREATE ROOMS -->
+    <section class="mt-6 mx-4 sm:mx-0 rounded-3xl border border-slate-800 bg-slate-900/40 backdrop-blur-sm p-5 sm:p-6 shadow-xl">
+      <div class="flex items-center justify-between mb-5">
+        <div class="text-xs uppercase tracking-widest text-slate-400 font-bold flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full bg-brand-500"></span> Active Rooms
+        </div>
+        <div class="flex items-center gap-3">
+          <div id="roomsMsg" class="hidden text-xs font-bold text-brand-400"></div>
+          <button id="refreshRoomsBtn" class="text-xs font-bold text-slate-500 hover:text-slate-300 transition">↻ Refresh</button>
         </div>
       </div>
+
       <!-- Create buttons -->
-            <!-- Create buttons -->
-      <div class="grid grid-cols-3 gap-2 mb-2">
-        <button id="createLudo4Btn" class="rounded-lg bg-gradient-to-r from-brand-600 to-fuchsia-600 hover:opacity-90 px-3 py-2.5 text-xs font-bold transition">
+      <div class="grid grid-cols-3 gap-2 mb-3">
+        <button id="createLudo4Btn" class="rounded-xl bg-gradient-to-r from-brand-600 to-fuchsia-600 hover:opacity-90 px-3 py-3 text-xs font-bold transition shadow-lg shadow-brand-600/20">
           🎯 4P Ludo
         </button>
-        <button id="createLudo3Btn" class="rounded-lg border border-slate-700 hover:bg-slate-800 px-3 py-2.5 text-xs font-bold transition">
+        <button id="createLudo3Btn" class="rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-3 text-xs font-bold transition">
           🎯 3P Ludo
         </button>
-        <button id="createLudo2Btn" class="rounded-lg border border-slate-700 hover:bg-slate-800 px-3 py-2.5 text-xs font-bold transition">
+        <button id="createLudo2Btn" class="rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-3 text-xs font-bold transition">
           🎯 2P Ludo
         </button>
       </div>
-      <div class="grid grid-cols-1 gap-2 mb-3">
-        <button id="createChessBtn" class="rounded-lg bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 border border-slate-600 px-3 py-2.5 text-xs font-bold transition">
+      <div class="grid grid-cols-1 gap-2 mb-4">
+        <button id="createChessBtn" class="rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 border border-slate-700 px-3 py-3 text-xs font-bold transition">
           ♟️ Chess (2 Players)
         </button>
       </div>
 
+      <div class="grid grid-cols-2 gap-2 mb-4">
+  <button id="createPrivateLudoBtn" class="rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 border border-slate-700 px-3 py-3 text-xs font-bold transition">
+    🔒 Private Ludo Room
+  </button>
+  <button id="createPrivateChessBtn" class="rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 border border-slate-700 px-3 py-3 text-xs font-bold transition">
+    🔒 Private Chess
+  </button>
+</div>
+
       <!-- Join by code -->
-      <div class="flex gap-2 mb-3">
-        <input id="roomCodeInput" type="text" maxlength="6" placeholder="Enter room code"
-          class="flex-1 rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:border-brand-500" />
-        <button id="roomCodeBtn" class="rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs font-bold transition">
+      <div class="flex gap-2 mb-5">
+        <input id="roomCodeInput" type="text" maxlength="6" placeholder="Enter private room code" 
+          class="flex-1 rounded-xl bg-slate-950 border border-slate-800 px-4 py-3 text-sm font-mono uppercase focus:outline-none focus:border-brand-500 transition placeholder:text-slate-600" />
+        <button id="roomCodeBtn" class="rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 px-5 py-3 text-sm font-bold transition">
           Join
         </button>
       </div>
 
       <!-- Open rooms list -->
-      <div id="roomsList" class="space-y-2">
-        <div class="text-xs text-slate-500 text-center py-4">Loading rooms…</div>
+      <div id="roomsList" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div class="col-span-full text-xs text-slate-500 text-center py-6">Looking for rooms…</div>
       </div>
     </section>
   </main>
-    <p class="hidden sm:block mt-3 text-xs text-slate-500 text-center">
-      Move with <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">W A S D</kbd>
-      or <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">↑ ← ↓ →</kbd> · Click a player to interact.
-    </p>
-    <p class="sm:hidden absolute bottom-3 left-0 right-0 text-xs text-slate-500 text-center pointer-events-none">
-      Drag anywhere to move · Tap a player
-    </p>
-  </main>
 
+  <!-- POPUP MENU -->
   <div id="popup" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm items-center justify-center p-4">
-    <div class="w-full max-w-[340px] rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+    <div class="w-full max-w-[340px] rounded-3xl border border-slate-700 bg-slate-900/90 backdrop-blur-xl p-6 shadow-2xl">
       <div class="flex items-center gap-4">
         <div id="popupAvatar"></div>
         <div>
-          <div id="popupName" class="font-bold text-lg"></div>
-          <div id="popupLevel" class="text-xs text-slate-400"></div>
+          <div id="popupName" class="font-black text-xl text-white"></div>
+          <div id="popupLevel" class="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5"></div>
         </div>
       </div>
       <div class="grid grid-cols-2 gap-2 mt-6">
-        <button id="challengeBtn" class="rounded-lg bg-brand-600 hover:bg-brand-700 px-3 py-2 text-xs font-semibold transition">⚔️ Challenge</button>
-        <a id="messageBtn" href="#" class="text-center rounded-lg bg-slate-800 hover:bg-slate-700 px-3 py-2 text-xs font-semibold transition">💬 Message</a>
+        <button id="challengeBtn" class="col-span-2 rounded-xl bg-brand-600 hover:bg-brand-500 px-3 py-3 text-xs font-bold transition text-center shadow-lg shadow-brand-500/20">⚔️ Challenge to Match</button>
+        <a id="messageBtn" href="#" class="text-center rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2.5 text-xs font-bold transition">💬 Message</a>
+        <a id="viewProfileBtn" href="#" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 px-3 py-2.5 text-xs font-bold transition text-slate-300">👤 View Profile</a>
       </div>
-      <button id="popupClose" class="mt-4 w-full rounded-lg border border-slate-700 px-3 py-2 text-xs hover:bg-slate-800">Close</button>
+      <button id="popupClose" class="mt-4 w-full rounded-xl border border-slate-800 px-3 py-2.5 text-xs font-bold text-slate-400 hover:bg-slate-800 transition">Close</button>
     </div>
   </div>
 
+  <!-- CHALLENGE MODAL -->
   <div id="challengeModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm items-center justify-center p-4">
-    <div class="w-full max-w-[380px] rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-      <div class="text-xs uppercase tracking-widest text-brand-500">Incoming challenge</div>
-      <div class="flex items-center gap-4 mt-4">
+    <div class="w-full max-w-[380px] rounded-3xl border border-brand-500/40 bg-slate-900/95 p-6 shadow-2xl shadow-brand-500/20">
+      <div class="text-[10px] uppercase tracking-widest text-brand-400 font-bold mb-4 animate-pulse">⚔️ Incoming Challenge</div>
+      <div class="flex items-center gap-4">
         <div id="challengerAvatar"></div>
         <div>
-          <div id="challengerName" class="font-bold text-lg"></div>
-          <div class="text-xs text-slate-400">wants to play dice</div>
+          <div id="challengerName" class="font-black text-lg text-white"></div>
+          <div class="text-xs font-bold text-slate-400">wants to play</div>
         </div>
       </div>
       <div class="grid grid-cols-2 gap-2 mt-6">
-        <button id="acceptChallenge" class="rounded-lg bg-brand-600 hover:bg-brand-700 px-3 py-2 text-sm font-semibold transition">Accept</button>
-        <button id="declineChallenge" class="rounded-lg border border-slate-700 hover:bg-slate-800 px-3 py-2 text-sm font-semibold transition">Decline</button>
+        <button id="acceptChallenge" class="rounded-xl bg-brand-600 hover:bg-brand-500 px-3 py-3 text-sm font-bold transition shadow-lg shadow-brand-600/30">Accept</button>
+        <button id="declineChallenge" class="rounded-xl border border-slate-700 hover:bg-slate-800 px-3 py-3 text-sm font-bold transition text-slate-300">Decline</button>
       </div>
     </div>
   </div>
 
-  <div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-slate-800 border border-slate-700 px-4 py-2 text-sm"></div>
+  <div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-xl bg-slate-800 border border-slate-700 px-5 py-3 text-sm font-bold shadow-2xl"></div>
 
   <script type="module" src="/static/js/lobby.js"></script>
-    <script type="module" src="/static/js/lobby-rooms.js"></script>
+  <script type="module" src="/static/js/lobby-rooms.js"></script>
 </body>
 </html>
