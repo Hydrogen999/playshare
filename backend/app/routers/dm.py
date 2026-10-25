@@ -1,17 +1,48 @@
 import json
-from datetime import datetime, timezone
-
+from datetime import datetime, timezone, date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models.social import DirectMessage, Notification
+from app.models.social import DirectMessage, Notification, Friendship
 from app.models.user import User
 from app.schemas.social import ConversationOut, DMOut, SendDMIn
 
 router = APIRouter(prefix="/api/v1/dm", tags=["dm"])
+
+
+def _update_streak(db: Session, me_id: str, other_id: str):
+    f = db.query(Friendship).filter(
+        or_(
+            and_(Friendship.requester_id == me_id, Friendship.addressee_id == other_id),
+            and_(Friendship.requester_id == other_id, Friendship.addressee_id == me_id),
+        )
+    ).first()
+    
+    if not f or f.status != "accepted":
+        return
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    if f.last_streak_date == today:
+        return
+
+    if f.last_streak_date:
+        last_date = datetime.strptime(f.last_streak_date, "%Y-%m-%d").date()
+        today_date = date.today()
+        delta = (today_date - last_date).days
+        
+        if delta == 1:
+            f.streak_count += 1
+        elif delta > 1:
+            f.streak_count = 1
+    else:
+        f.streak_count = 1
+
+    f.last_streak_date = today
+    db.commit()
 
 
 @router.get("", response_model=list[ConversationOut])
@@ -19,7 +50,6 @@ def list_conversations(
     me: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Get all DMs involving me, ordered newest first
     rows = (
         db.query(DirectMessage)
         .filter(
@@ -34,6 +64,13 @@ def list_conversations(
 
     seen: set[str] = set()
     convos: list[ConversationOut] = []
+    
+    friendships = db.query(Friendship).filter(
+        Friendship.status == "accepted",
+        or_(Friendship.requester_id == me.id, Friendship.addressee_id == me.id)
+    ).all()
+    streak_map = { (f.addressee_id if f.requester_id == me.id else f.requester_id): f.streak_count for f in friendships }
+
     for m in rows:
         other = m.recipient_id if m.sender_id == me.id else m.sender_id
         if other in seen:
@@ -56,6 +93,7 @@ def list_conversations(
             last_message=m.content[:80],
             last_at=m.created_at.isoformat(),
             unread_count=unread,
+            streak=streak_map.get(other, 0)
         ))
     return convos
 
@@ -71,14 +109,8 @@ def get_conversation(
         db.query(DirectMessage)
         .filter(
             or_(
-                and_(
-                    DirectMessage.sender_id == me.id,
-                    DirectMessage.recipient_id == user_id,
-                ),
-                and_(
-                    DirectMessage.sender_id == user_id,
-                    DirectMessage.recipient_id == me.id,
-                ),
+                and_(DirectMessage.sender_id == me.id, DirectMessage.recipient_id == user_id),
+                and_(DirectMessage.sender_id == user_id, DirectMessage.recipient_id == me.id),
             )
         )
         .order_by(DirectMessage.created_at.asc())
@@ -86,7 +118,6 @@ def get_conversation(
         .all()
     )
 
-    # Mark received as read
     changed = False
     for m in rows:
         if m.recipient_id == me.id and m.read_at is None:
@@ -128,6 +159,8 @@ def send_dm(
     m = DirectMessage(sender_id=me.id, recipient_id=user_id, content=content)
     db.add(m)
     db.flush()
+
+    _update_streak(db, me.id, user_id)
 
     notif = Notification(
         user_id=user_id,
