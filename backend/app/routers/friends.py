@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import uuid
+from sqlalchemy import func # Add this to top imports
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy import or_
@@ -186,12 +187,22 @@ def create_status(
     me: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    db.query(Status).filter(Status.user_id == me.id).delete()
+    # Check daily limit (Max 20 per day)
+    today = datetime.now(timezone.utc).date()
+    count = db.query(Status).filter(
+        Status.user_id == me.id,
+        func.date(Status.created_at) == today
+    ).count()
+    
+    if count >= 20:
+        raise HTTPException(400, "You can only post 20 statuses per day.")
+
+    # NO LONGER DELETING OLD STATUSES (So we can slideshow them)
     
     media_url = None
     if media:
         ext = media.filename.split(".")[-1]
-        filename = f"{uuid.uuid4().hex}.{ext}"
+        filename = f"status_{uuid.uuid4().hex}.{ext}"
         filepath = os.path.join(UPLOAD_DIR, filename)
         with open(filepath, "wb") as buffer:
             shutil.copyfileobj(media.file, buffer)
@@ -199,11 +210,8 @@ def create_status(
 
     expires = datetime.now(timezone.utc) + timedelta(hours=24)
     s = Status(
-        user_id=me.id,
-        content=content[:255] if content else "",
-        game_invite=game_invite,
-        media_url=media_url,
-        expires_at=expires,
+        user_id=me.id, content=content[:255] if content else "",
+        game_invite=game_invite, media_url=media_url, expires_at=expires,
     )
     db.add(s)
     db.commit()
