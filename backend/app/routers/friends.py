@@ -1,18 +1,26 @@
 import json
-
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import shutil
+import uuid
+from datetime import datetime, timezone, timedelta
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models.social import Friendship, Notification
+from app.models.social import Friendship, Notification, Status
 from app.models.user import User
 from app.schemas.social import FriendOut, FriendRequestOut
 from app.services.cosmetics import get_frame_styles_bulk
 from app.services.premium import premium_bulk
 
 router = APIRouter(prefix="/api/v1/friends", tags=["friends"])
+
+# Path to save uploads (frontend/static/uploads)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+UPLOAD_DIR = os.path.join(BASE_DIR, "frontend", "static", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 def _find_friendship(db: Session, a: str, b: str) -> Friendship | None:
@@ -41,10 +49,7 @@ def _user_summary(db: Session, user_id: str) -> dict:
 
 
 @router.get("", response_model=list[FriendOut])
-def list_friends(
-    me: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def list_friends(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = (
         db.query(Friendship)
         .filter(
@@ -53,10 +58,7 @@ def list_friends(
         )
         .all()
     )
-    other_ids = [
-        r.addressee_id if r.requester_id == me.id else r.requester_id
-        for r in rows
-    ]
+    other_ids = [r.addressee_id if r.requester_id == me.id else r.requester_id for r in rows]
     frames = get_frame_styles_bulk(db, other_ids)
     premiums = premium_bulk(db, other_ids)
 
@@ -65,22 +67,15 @@ def list_friends(
         other_id = r.addressee_id if r.requester_id == me.id else r.requester_id
         info = _user_summary(db, other_id)
         out.append(FriendOut(
-            id=info["id"],
-            username=info["username"],
-            avatar_id=info["avatar_id"],
-            level=info["level"],
-            online=False,
-            frame_color=frames.get(other_id),
-            is_premium=premiums.get(other_id, False),
+            id=info["id"], username=info["username"], avatar_id=info["avatar_id"],
+            level=info["level"], online=False, frame_color=frames.get(other_id),
+            is_premium=premiums.get(other_id, False), streak_count=r.streak_count,
         ))
     return out
 
 
 @router.get("/requests", response_model=list[FriendRequestOut])
-def list_requests(
-    me: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def list_requests(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = (
         db.query(Friendship)
         .filter(Friendship.addressee_id == me.id, Friendship.status == "pending")
@@ -95,24 +90,15 @@ def list_requests(
     for r in rows:
         info = _user_summary(db, r.requester_id)
         out.append(FriendRequestOut(
-            request_id=r.id,
-            user_id=info["id"],
-            username=info["username"],
-            avatar_id=info["avatar_id"],
-            level=info["level"],
-            created_at=r.created_at.isoformat(),
-            frame_color=frames.get(r.requester_id),
-            is_premium=premiums.get(r.requester_id, False),
+            request_id=r.id, user_id=info["id"], username=info["username"],
+            avatar_id=info["avatar_id"], level=info["level"], created_at=r.created_at.isoformat(),
+            frame_color=frames.get(r.requester_id), is_premium=premiums.get(r.requester_id, False),
         ))
     return out
 
 
 @router.post("/request/{user_id}")
-def send_request(
-    user_id: str,
-    me: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def send_request(user_id: str, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user_id == me.id:
         raise HTTPException(status_code=400, detail="Cannot add yourself")
     target = db.get(User, user_id)
@@ -140,15 +126,8 @@ def send_request(
     db.flush()
 
     notif = Notification(
-        user_id=user_id,
-        type="friend_request",
-        payload=json.dumps({
-            "from_id": me.id,
-            "from_username": me.username,
-            "from_avatar": me.profile.avatar_id if me.profile else "fox",
-            "from_level": me.profile.level if me.profile else 1,
-            "request_id": f.id,
-        }),
+        user_id=user_id, type="friend_request",
+        payload=json.dumps({"from_id": me.id, "from_username": me.username, "from_avatar": me.profile.avatar_id if me.profile else "fox", "from_level": me.profile.level if me.profile else 1, "request_id": f.id}),
     )
     db.add(notif)
     db.commit()
@@ -156,11 +135,7 @@ def send_request(
 
 
 @router.post("/accept/{user_id}")
-def accept_request(
-    user_id: str,
-    me: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def accept_request(user_id: str, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     f = _find_friendship(db, me.id, user_id)
     if not f or f.status != "pending":
         raise HTTPException(status_code=404, detail="No pending request")
@@ -169,14 +144,8 @@ def accept_request(
     f.status = "accepted"
 
     notif = Notification(
-        user_id=user_id,
-        type="friend_accepted",
-        payload=json.dumps({
-            "from_id": me.id,
-            "from_username": me.username,
-            "from_avatar": me.profile.avatar_id if me.profile else "fox",
-            "from_level": me.profile.level if me.profile else 1,
-        }),
+        user_id=user_id, type="friend_accepted",
+        payload=json.dumps({"from_id": me.id, "from_username": me.username, "from_avatar": me.profile.avatar_id if me.profile else "fox", "from_level": me.profile.level if me.profile else 1}),
     )
     db.add(notif)
     db.commit()
@@ -184,11 +153,7 @@ def accept_request(
 
 
 @router.post("/decline/{user_id}")
-def decline_request(
-    user_id: str,
-    me: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def decline_request(user_id: str, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     f = _find_friendship(db, me.id, user_id)
     if not f or f.status != "pending":
         raise HTTPException(status_code=404, detail="No pending request")
@@ -200,14 +165,76 @@ def decline_request(
 
 
 @router.delete("/{user_id}")
-def remove_friend(
-    user_id: str,
-    me: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def remove_friend(user_id: str, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     f = _find_friendship(db, me.id, user_id)
     if not f:
         raise HTTPException(status_code=404, detail="Not friends")
     db.delete(f)
     db.commit()
     return {"status": "removed"}
+
+
+# ---------------------------------------------------------------------------
+# STATUS / STORIES ENDPOINTS (Updated for Media)
+# ---------------------------------------------------------------------------
+
+@router.post("/status")
+def create_status(
+    content: str = Form(""),
+    game_invite: str | None = Form(None),
+    media: UploadFile | None = File(None),
+    me: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    db.query(Status).filter(Status.user_id == me.id).delete()
+    
+    media_url = None
+    if media:
+        ext = media.filename.split(".")[-1]
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        with open(filepath, "wb") as buffer:
+            shutil.copyfileobj(media.file, buffer)
+        media_url = f"/static/uploads/{filename}"
+
+    expires = datetime.now(timezone.utc) + timedelta(hours=24)
+    s = Status(
+        user_id=me.id,
+        content=content[:255] if content else "",
+        game_invite=game_invite,
+        media_url=media_url,
+        expires_at=expires,
+    )
+    db.add(s)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/status/feed")
+def get_status_feed(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    statuses = db.query(Status).filter(Status.expires_at > now).all()
+    
+    out = []
+    for s in statuses:
+        u = db.get(User, s.user_id)
+        if not u or not u.profile: continue
+        
+        if s.user_id == me.id:
+            relation = "self"
+        else:
+            rel = _find_friendship(db, me.id, s.user_id)
+            relation = "friend" if rel and rel.status == "accepted" else "stranger"
+
+        out.append({
+            "id": s.id,
+            "user_id": s.user_id,
+            "username": u.username,
+            "avatar_id": u.profile.avatar_id,
+            "content": s.content,
+            "game_invite": s.game_invite,
+            "media_url": s.media_url, # Send this to frontend
+            "relation": relation,
+            "created_at": s.created_at.isoformat()
+        })
+    return out
