@@ -3,6 +3,7 @@ import { permissionStatus, requestPermission, setPushPrefs } from "./notificatio
 import { isSoundEnabled, setSoundEnabled, sfx } from "./sounds.js";
 
 const $ = (id) => document.getElementById(id);
+let isPremium = false;
 
 function showMsg(text, type = "success") {
   const el = $("msg");
@@ -48,15 +49,24 @@ async function loadSettings() {
     $("on_tournament").checked = s.on_tournament;
     $("on_achievement").checked = s.on_achievement;
 
-    // Sync to local prefs for the notification helper
     setPushPrefs({
-      enabled: s.enabled,
-      on_challenge: s.on_challenge,
-      on_dm: s.on_dm,
-      on_friend: s.on_friend,
-      on_tournament: s.on_tournament,
-      on_achievement: s.on_achievement,
+      enabled: s.enabled, on_challenge: s.on_challenge, on_dm: s.on_dm,
+      on_friend: s.on_friend, on_tournament: s.on_tournament, on_achievement: s.on_achievement,
     });
+
+    // Load Premium Chat Settings
+    const me = await api.me();
+    isPremium = me.profile.is_premium || false;
+    
+    const retention = me.profile.chat_retention_days || 1;
+    $("chatRetention").value = String(retention);
+
+    if (!isPremium) {
+      $("chatRetention").disabled = true;
+      $("chatRetention").classList.add("opacity-50", "cursor-not-allowed");
+      $("premiumNote").classList.remove("hidden");
+    }
+
   } catch (err) {
     showMsg(err.message, "error");
   }
@@ -66,10 +76,7 @@ $("permBtn").addEventListener("click", async () => {
   const r = await requestPermission();
   if (r === "granted") {
     renderPermission();
-    // Send a test notification
-    try {
-      new Notification("PlaySphere", { body: "🎉 Notifications enabled!" });
-    } catch {}
+    try { new Notification("PlaySphere", { body: "🎉 Notifications enabled!" }); } catch {}
   } else {
     renderPermission();
   }
@@ -84,8 +91,16 @@ $("saveBtn").addEventListener("click", async () => {
     on_tournament: $("on_tournament").checked,
     on_achievement: $("on_achievement").checked,
   };
+  
+  if (isPremium) {
+    payload.chat_retention_days = parseInt($("chatRetention").value, 10);
+  }
+
   try {
     await api.updatePushSettings(payload);
+    if (isPremium) {
+      await api.updateProfile({ chat_retention_days: payload.chat_retention_days });
+    }
     setPushPrefs(payload);
     showMsg("Saved! ✓");
   } catch (err) {
@@ -111,9 +126,7 @@ function initSoundToggle() {
   el.checked = isSoundEnabled();
   el.addEventListener("change", () => {
     setSoundEnabled(el.checked);
-    if (el.checked) {
-      try { sfx.success(); } catch {}
-    }
+    if (el.checked) { try { sfx.success(); } catch {} }
   });
 }
 
