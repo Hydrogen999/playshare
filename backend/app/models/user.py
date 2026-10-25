@@ -60,5 +60,8 @@ class Profile(Base):
     last_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
     )
+    
+    # --- NEW: Chat Auto-Clear Settings ---
+    chat_retention_days: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     user: Mapped[User] = relationship("User", back_populates="profile")
