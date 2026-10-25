@@ -1,14 +1,4 @@
-from pydantic import BaseModel, Field
-
-
-class UserSearchOut(BaseModel):
-    id: str
-    username: str
-    avatar_id: str
-    level: int
-    relationship: str
-    frame_color: str | None = None
-    is_premium: bool = False
+from pydantic import BaseModel
 
 
 class FriendOut(BaseModel):
@@ -19,6 +9,7 @@ class FriendOut(BaseModel):
     online: bool
     frame_color: str | None = None
     is_premium: bool = False
+    streak_count: int = 0
 
 
 class FriendRequestOut(BaseModel):
@@ -32,6 +23,18 @@ class FriendRequestOut(BaseModel):
     is_premium: bool = False
 
 
+class ConversationOut(BaseModel):
+    user_id: str
+    username: str
+    avatar_id: str
+    last_message: str
+    last_at: str
+    unread_count: int
+    frame_color: str | None = None
+    is_premium: bool = False
+    streak: int = 0
+
+
 class DMOut(BaseModel):
     id: str
     sender_id: str
@@ -42,23 +45,23 @@ class DMOut(BaseModel):
 
 
 class SendDMIn(BaseModel):
-    content: str = Field(min_length=1, max_length=1000)
-
-
-class ConversationOut(BaseModel):
-    user_id: str
-    username: str
-    avatar_id: str
-    last_message: str
-    last_at: str
-    unread_count: int
-    frame_color: str | None = None
-    is_premium: bool = False
+    content: str
 
 
 class NotificationOut(BaseModel):
     id: str
     type: str
-    payload: dict
+    payload: str
     read: bool
     created_at: str
+
+
+# --- THIS IS WHAT WAS MISSING ---
+class UserSearchOut(BaseModel):
+    id: str
+    username: str
+    avatar_id: str
+    level: int
+    relationship: str
+    frame_color: str | None = None
+    is_premium: bool = False
