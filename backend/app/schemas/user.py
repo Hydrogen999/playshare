@@ -8,14 +8,17 @@ class ProfileOut(BaseModel):
     tokens: int
     bio: str
     country: str
-    chat_retention_days: int = 1  # NEW
+    chat_retention_days: int = 1
+    is_premium: bool = False
+    frame_color: str | None = None
+    premium_expires_at: str | None = None
 
 
 class ProfileUpdateIn(BaseModel):
     avatar_id: str | None = None
     bio: str | None = None
     country: str | None = None
-    chat_retention_days: int | None = None  # NEW
+    chat_retention_days: int | None = None
 
 
 class MeOut(BaseModel):
@@ -26,13 +29,13 @@ class MeOut(BaseModel):
     profile: ProfileOut
 
 
-# --- RESTORED CLASSES ---
 class PublicProfileOut(BaseModel):
     avatar_id: str
     level: int
     xp: int
     bio: str
     country: str
+    is_premium: bool = False
 
 
 class PublicUserOut(BaseModel):
