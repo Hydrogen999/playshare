@@ -86,7 +86,13 @@
 
         <div id="chatMessages" class="flex-1 overflow-y-auto p-3 sm:p-4 chat-scroll space-y-2"></div>
 
-        <form id="chatForm" class="border-t border-slate-800 p-2 sm:p-3 flex gap-2 hidden">
+               <form id="chatForm" class="border-t border-slate-800 p-2 sm:p-3 flex gap-2 hidden">
+          <!-- Premium Image Upload Button -->
+          <label class="cursor-pointer flex items-center justify-center px-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition">
+            <span id="chatFileLabel" class="text-lg">📷</span>
+            <input type="file" id="chatFileInput" accept="image/*" class="hidden" />
+          </label>
+          
           <input id="chatInput" type="text" maxlength="1000" placeholder="Type a message…"
             class="flex-1 rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500" />
           <button type="submit" class="rounded-lg bg-brand-600 hover:bg-brand-700 px-4 py-2 text-sm font-semibold transition">Send</button>
