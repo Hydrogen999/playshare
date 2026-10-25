@@ -40,10 +40,11 @@ class DirectMessage(Base):
     sender_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
     recipient_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    media_url: Mapped[str | None] = mapped_column(String(255), nullable=True) # NEW
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
 
-
+    
 class Notification(Base):
     __tablename__ = "notifications"
 
