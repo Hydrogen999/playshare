@@ -130,6 +130,30 @@
       <a href="/refund" class="hover:text-slate-300">Refund</a>
     </div>
   </main>
+      <!-- Chat Preferences (Premium) -->
+    <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="font-bold text-lg flex items-center gap-2">
+            💬 Chat Settings 
+            <span class="text-[10px] uppercase tracking-widest text-amber-400 bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/40">👑 Premium</span>
+          </div>
+          <div class="text-xs text-slate-500">Control how long your DMs are saved</div>
+        </div>
+      </div>
+
+      <div id="chatRetentionWrap" class="rounded-xl border border-slate-700 bg-slate-800/40 p-4">
+        <label class="block text-xs font-bold text-slate-400 mb-2">Auto-Delete Messages After:</label>
+        <select id="chatRetention" class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500">
+          <option value="1">1 Day (Default)</option>
+          <option value="7">7 Days (Premium)</option>
+          <option value="30">30 Days (Premium)</option>
+        </select>
+        <p id="premiumNote" class="text-[11px] text-amber-400 mt-2 hidden">
+          🔒 Upgrade to Premium to save chats for 7 or 30 days.
+        </p>
+      </div>
+    </section>
 
   <script type="module" src="/static/js/settings.js"></script>
 </body>
