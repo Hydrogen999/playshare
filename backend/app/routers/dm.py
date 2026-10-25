@@ -1,6 +1,9 @@
 import json
-from datetime import datetime, timezone, date
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import shutil
+import uuid
+from datetime import datetime, timezone, date, timedelta
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
@@ -12,6 +15,14 @@ from app.schemas.social import ConversationOut, DMOut, SendDMIn
 
 router = APIRouter(prefix="/api/v1/dm", tags=["dm"])
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+UPLOAD_DIR = os.path.join(BASE_DIR, "frontend", "static", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+def _is_premium(db: Session, user_id: str) -> bool:
+    # Simple check if premium based on your existing system (you might have a better way)
+    from app.services.premium import premium_bulk
+    return premium_bulk(db, [user_id]).get(user_id, False)
 
 def _update_streak(db: Session, me_id: str, other_id: str):
     f = db.query(Friendship).filter(
@@ -36,7 +47,11 @@ def _update_streak(db: Session, me_id: str, other_id: str):
         
         if delta == 1:
             f.streak_count += 1
-        elif delta > 1:
+        elif delta >= 5:
+            f.streak_count = 1 # Expired, starts back at 1
+        elif delta >= 2:
+            # It's in restore period (2-4 days). Don't increment yet, 
+            # the frontend will prompt them to restore. If they chat, we reset it to 1 for now.
             f.streak_count = 1
     else:
         f.streak_count = 1
@@ -44,20 +59,28 @@ def _update_streak(db: Session, me_id: str, other_id: str):
     f.last_streak_date = today
     db.commit()
 
+@router.post("/streak/{friend_id}/restore")
+def restore_streak(friend_id: str, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    f = db.query(Friendship).filter(
+        or_(
+            and_(Friendship.requester_id == me.id, Friendship.addressee_id == friend_id),
+            and_(Friendship.requester_id == friend_id, Friendship.addressee_id == me.id),
+        )
+    ).first()
+    
+    if not f:
+        raise HTTPException(404, "Friendship not found")
+        
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    f.last_streak_date = today
+    db.commit()
+    return {"ok": True, "streak_count": f.streak_count}
 
 @router.get("", response_model=list[ConversationOut])
-def list_conversations(
-    me: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def list_conversations(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = (
         db.query(DirectMessage)
-        .filter(
-            or_(
-                DirectMessage.sender_id == me.id,
-                DirectMessage.recipient_id == me.id,
-            )
-        )
+        .filter(or_(DirectMessage.sender_id == me.id, DirectMessage.recipient_id == me.id))
         .order_by(DirectMessage.created_at.desc())
         .all()
     )
@@ -77,41 +100,40 @@ def list_conversations(
             continue
         seen.add(other)
         u = db.get(User, other)
-        unread = (
-            db.query(DirectMessage)
-            .filter(
-                DirectMessage.sender_id == other,
-                DirectMessage.recipient_id == me.id,
-                DirectMessage.read_at.is_(None),
-            )
-            .count()
-        )
+        unread = db.query(DirectMessage).filter(
+            DirectMessage.sender_id == other,
+            DirectMessage.recipient_id == me.id,
+            DirectMessage.read_at.is_(None),
+        ).count()
+        
         convos.append(ConversationOut(
             user_id=other,
             username=u.username if u else "unknown",
             avatar_id=u.profile.avatar_id if u and u.profile else "fox",
-            last_message=m.content[:80],
+            last_message=m.content[:80] or "📷 Image",
             last_at=m.created_at.isoformat(),
             unread_count=unread,
             streak=streak_map.get(other, 0)
         ))
     return convos
 
-
 @router.get("/{user_id}", response_model=list[DMOut])
-def get_conversation(
-    user_id: str,
-    limit: int = 100,
-    me: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def get_conversation(user_id: str, limit: int = 100, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # CHAT AUTO-CLEAR LOGIC
+    retention = me.profile.chat_retention_days or 1
+    if not _is_premium(db, me.id) and retention > 1:
+        retention = 1 # Force 1 day for non-premium
+        
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention)
+
     rows = (
         db.query(DirectMessage)
         .filter(
             or_(
                 and_(DirectMessage.sender_id == me.id, DirectMessage.recipient_id == user_id),
                 and_(DirectMessage.sender_id == user_id, DirectMessage.recipient_id == me.id),
-            )
+            ),
+            DirectMessage.created_at >= cutoff # Filter by retention
         )
         .order_by(DirectMessage.created_at.asc())
         .limit(min(limit, 500))
@@ -123,54 +145,55 @@ def get_conversation(
         if m.recipient_id == me.id and m.read_at is None:
             m.read_at = datetime.now(timezone.utc)
             changed = True
-    if changed:
-        db.commit()
+    if changed: db.commit()
 
     return [
         DMOut(
-            id=m.id,
-            sender_id=m.sender_id,
-            recipient_id=m.recipient_id,
-            content=m.content,
-            read=m.read_at is not None,
+            id=m.id, sender_id=m.sender_id, recipient_id=m.recipient_id,
+            content=m.content, media_url=m.media_url, read=m.read_at is not None,
             created_at=m.created_at.isoformat(),
         )
         for m in rows
     ]
 
-
 @router.post("/{user_id}", response_model=DMOut)
 def send_dm(
     user_id: str,
-    data: SendDMIn,
+    content: str = Form(""),
+    media: UploadFile | None = File(None),
     me: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     if user_id == me.id:
-        raise HTTPException(status_code=400, detail="Cannot DM yourself")
-    target = db.get(User, user_id)
-    if not target:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(400, "Cannot DM yourself")
+    
+    if media and not _is_premium(db, me.id):
+        raise HTTPException(403, "Only Premium users can send images. Upgrade to Premium!")
 
-    content = data.content.strip()[:1000]
-    if not content:
-        raise HTTPException(status_code=400, detail="Empty message")
+    media_url = None
+    if media:
+        ext = media.filename.split(".")[-1]
+        filename = f"dm_{uuid.uuid4().hex}.{ext}"
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        with open(filepath, "wb") as buffer:
+            shutil.copyfileobj(media.file, buffer)
+        media_url = f"/static/uploads/{filename}"
 
-    m = DirectMessage(sender_id=me.id, recipient_id=user_id, content=content)
+    if not content and not media_url:
+        raise HTTPException(400, "Empty message")
+
+    m = DirectMessage(sender_id=me.id, recipient_id=user_id, content=content[:1000], media_url=media_url)
     db.add(m)
     db.flush()
 
     _update_streak(db, me.id, user_id)
 
     notif = Notification(
-        user_id=user_id,
-        type="dm",
+        user_id=user_id, type="dm",
         payload=json.dumps({
-            "from_id": me.id,
-            "from_username": me.username,
+            "from_id": me.id, "from_username": me.username,
             "from_avatar": me.profile.avatar_id if me.profile else "fox",
-            "message_id": m.id,
-            "preview": content[:60],
+            "message_id": m.id, "preview": content[:60] if content else "📷 Image",
         }),
     )
     db.add(notif)
@@ -178,10 +201,7 @@ def send_dm(
     db.refresh(m)
 
     return DMOut(
-        id=m.id,
-        sender_id=m.sender_id,
-        recipient_id=m.recipient_id,
-        content=m.content,
-        read=False,
+        id=m.id, sender_id=m.sender_id, recipient_id=m.recipient_id,
+        content=m.content, media_url=m.media_url, read=False,
         created_at=m.created_at.isoformat(),
     )
