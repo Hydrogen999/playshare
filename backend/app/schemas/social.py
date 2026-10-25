@@ -65,3 +65,12 @@ class UserSearchOut(BaseModel):
     relationship: str
     frame_color: str | None = None
     is_premium: bool = False
+
+class DMOut(BaseModel):
+    id: str
+    sender_id: str
+    recipient_id: str
+    content: str
+    media_url: str | None = None # NEW
+    read: bool
+    created_at: str
