@@ -1,18 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.avatars import is_valid_avatar
 from app.database import get_db
 from app.deps import get_current_user
-from app.models.user import User
-from app.schemas.user import MeOut, ProfileOut, ProfileUpdateIn
-from app.services.premium import premium_bulk
+from app.models.user import Profile, User
+from app.schemas.auth import LoginIn, RegisterIn, TokenOut
+from app.schemas.user import MeOut, ProfileOut
+from app.security import create_access_token, hash_password, verify_password
+from app.services.cosmetics import get_frame_style
+from app.services.premium import premium_status
+from app.services.referral import apply_referral
 
-router = APIRouter(prefix="/api/v1/me", tags=["me"])
+router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
-def _me_payload(user: User) -> MeOut:
+def _me_payload(db: Session, user: User) -> MeOut:
     p = user.profile
+    prem = premium_status(db, user.id)
+    
+    # Safely handle if chat_retention_days isn't in DB yet
+    retention = getattr(p, "chat_retention_days", 1) 
+
     return MeOut(
         id=user.id,
         email=user.email,
@@ -25,43 +34,56 @@ def _me_payload(user: User) -> MeOut:
             tokens=p.tokens_cached,
             bio=p.bio,
             country=p.country,
-            chat_retention_days=p.chat_retention_days, # NEW
+            frame_color=get_frame_style(db, user.id),
+            is_premium=prem["active"],
+            premium_expires_at=prem.get("expires_at"),
+            chat_retention_days=retention,
         ),
     )
 
 
-@router.patch("/profile", response_model=MeOut)
-def update_profile(
-    data: ProfileUpdateIn,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if data.avatar_id is not None:
-        if not is_valid_avatar(data.avatar_id):
-            raise HTTPException(status_code=400, detail="Invalid avatar")
-        user.profile.avatar_id = data.avatar_id
+@router.post("/register", response_model=TokenOut)
+def register(data: RegisterIn, db: Session = Depends(get_db)):
+    existing = (
+        db.query(User)
+        .filter(or_(User.email == data.email.lower(), User.username == data.username))
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="Email or username already taken")
 
-    if data.bio is not None:
-        user.profile.bio = data.bio.strip()[:280]
-
-    if data.country is not None:
-        c = data.country.strip().upper()
-        if c and len(c) != 2:
-            raise HTTPException(status_code=400, detail="Country must be 2-letter code")
-        user.profile.country = c
-
-    # --- NEW: Chat Retention Update ---
-    if data.chat_retention_days is not None:
-        is_prem = premium_bulk(db, [user.id]).get(user.id, False)
-        
-        if not is_prem and data.chat_retention_days > 1:
-            raise HTTPException(status_code=403, detail="Premium required to save chats for more than 1 day")
-        
-        if data.chat_retention_days in (1, 7, 30):
-            user.profile.chat_retention_days = data.chat_retention_days
-        else:
-            raise HTTPException(status_code=400, detail="Invalid chat retention days")
-
+    user = User(
+        email=data.email.lower(),
+        username=data.username,
+        password_hash=hash_password(data.password),
+    )
+    user.profile = Profile()
+    db.add(user)
     db.commit()
     db.refresh(user)
-    return _me_payload(user)
+
+    if data.ref_code:
+        try:
+            apply_referral(db, user.id, data.ref_code)
+        except Exception as e:
+            print(f"[register referral error] {e}")
+
+    token = create_access_token(sub=user.id)
+    return TokenOut(access_token=token)
+
+
+@router.post("/login", response_model=TokenOut)
+def login(data: LoginIn, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == data.email.lower()).first()
+    if not user or not verify_password(data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user.is_banned:
+        raise HTTPException(status_code=403, detail="Account banned")
+
+    token = create_access_token(sub=user.id)
+    return TokenOut(access_token=token)
+
+
+@router.get("/me", response_model=MeOut)
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _me_payload(db, user)
