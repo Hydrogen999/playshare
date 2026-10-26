@@ -13,8 +13,8 @@ from app.schemas.room import RoomMemberOut, RoomOut
 from app.services import presence as presence_svc
 
 router = APIRouter(prefix="/api/v1/rooms", tags=["rooms"])
+ALLOWED_GAMES = {"ludo", "dice", "chess", "whot"}
 
-ALLOWED_GAMES = {"ludo", "dice", "chess"}
 
 
 def _generate_code() -> str:
@@ -63,6 +63,8 @@ def create_public_room(
     me: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if data.game_slug == "whot" and (data.max_players < 2 or data.max_players > 4):
+     raise HTTPException(status_code=400, detail="Whot requires 2-4 players")
     """
     Create a room. Set `is_public=false` to make a private room.
     Both public and private rooms share the same 6-char code so either can
