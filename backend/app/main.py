@@ -137,6 +137,9 @@ def lobby_page():
 def room_page():
     return _serve("room.html")
 
+@app.get("/user")
+def user_page():
+    return _serve("user.html")
 
 @app.get("/friends")
 def friends_page():
