@@ -2,18 +2,14 @@ import { api } from "./api.js";
 import { avatarHTML } from "./avatars.js";
 import { LudoBoard } from "./ludo-board.js";
 import { ChessBoard } from "./chess-board.js";
+import { WhotBoard } from "./whot-board.js";
 import { sfx, unlockAudio } from "./sounds.js";
+
+const $ = (id) => document.getElementById(id);
 
 const params = new URLSearchParams(location.search);
 const roomId = params.get("id");
 
-
-const RECONNECT_KEY = `ps_rc_${roomId}`;
-let reconnectToken = localStorage.getItem(RECONNECT_KEY) || null;
-let reconnectAttempts = 0;
-let reconnectBanner = null;
-
-const $ = (id) => document.getElementById(id);
 const selectorPanel = $("selectorPanel");
 const gameStatus = $("gameStatus");
 const diceArea = $("diceArea");
@@ -21,6 +17,8 @@ const ludoArea = $("ludoArea");
 const ludoContainer = $("ludoContainer");
 const chessArea = $("chessArea");
 const chessContainer = $("chessContainer");
+const whotArea = $("whotArea");
+const whotContainer = $("whotContainer");
 const cardA = $("cardA");
 const cardB = $("cardB");
 const diceA = $("diceA");
@@ -48,6 +46,12 @@ let currentGame = "dice";
 let wagerLocked = false;
 let ludoBoard = null;
 let chessBoard = null;
+let whotBoard = null;
+
+const RECONNECT_KEY = `ps_rc_${roomId}`;
+let reconnectToken = localStorage.getItem(RECONNECT_KEY) || null;
+let reconnectAttempts = 0;
+let reconnectBanner = null;
 
 const DICE_FACES = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
 
@@ -80,11 +84,11 @@ function renderRoomCodeBanner(room) {
   const banner = document.createElement("div");
   banner.className = "mb-3 rounded-2xl border border-brand-500/40 bg-gradient-to-br from-brand-600/15 to-slate-900/60 p-3 sm:p-4 flex items-center justify-between gap-3";
   banner.id = "roomCodeBanner";
-  banner.innerHTML = `<div class="flex-1 min-w-0"><div class="text-[10px] uppercase tracking-widest text-brand-400 font-bold">Room Code</div><div class="text-lg sm:text-2xl font-black tracking-widest font-mono">${room.code}</div></div><button id="copyRoomCodeBtn" class="rounded-lg bg-brand-600 hover:bg-brand-700 px-3 py-2 text-xs font-bold whitespace-nowrap">📋 Copy Link</button>`;
+  banner.innerHTML = `<div class="flex-1 min-w-0"><div class="text-[10px] uppercase tracking-widest text-brand-400 font-bold">Room Code</div><div class="text-lg sm:text-2xl font-black tracking-widest font-mono">${room.code}</div></div><div class="flex gap-2"><button id="copyRoomCodeBtn" class="rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs font-bold whitespace-nowrap">📋 Copy</button><button id="shareRoomBtn" class="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-xs font-bold whitespace-nowrap">📢 Share</button></div>`;
   const main = document.querySelector("main");
   if (main) main.insertBefore(banner, main.firstChild);
 
-    document.getElementById("shareRoomBtn")?.addEventListener("click", async () => {
+  document.getElementById("shareRoomBtn")?.addEventListener("click", async () => {
     const link = `${location.origin}/join?code=${room.code}`;
     const text = `Join my PlaySphere room! 🎮 Code: ${room.code}\n${link}`;
     if (navigator.share) {
@@ -111,27 +115,20 @@ function updateGameCard(slug) {
     if (btn.dataset.game === slug) { btn.classList.add("border-brand-500", "bg-brand-500/10"); btn.classList.remove("border-slate-800"); }
     else { btn.classList.remove("border-brand-500", "bg-brand-500/10"); btn.classList.add("border-slate-800"); }
   });
-  const labels = { dice: "Roll-off", ludo: "Ludo", chess: "Chess" };
+  const labels = { dice: "Roll-off", ludo: "Ludo", chess: "Chess", whot: "Whot" };
   gameStatus.textContent = slug ? `Selected: ${labels[slug] || slug}` : "Not selected";
   showGameArea(slug);
 }
-
 
 function showReconnectBanner(text, color = "amber") {
   if (!reconnectBanner) {
     reconnectBanner = document.createElement("div");
     reconnectBanner.id = "reconnectBanner";
-    reconnectBanner.className =
-      "fixed top-14 left-1/2 -translate-x-1/2 z-50 rounded-lg px-4 py-2 text-xs font-bold shadow-lg transition";
+    reconnectBanner.className = "fixed top-14 left-1/2 -translate-x-1/2 z-50 rounded-lg px-4 py-2 text-xs font-bold shadow-lg transition";
     document.body.appendChild(reconnectBanner);
   }
-  const colors = {
-    amber: "bg-amber-500/90 text-slate-900",
-    red: "bg-red-500/90 text-white",
-    green: "bg-emerald-500/90 text-slate-900",
-  };
-  reconnectBanner.className =
-    `fixed top-14 left-1/2 -translate-x-1/2 z-50 rounded-lg px-4 py-2 text-xs font-bold shadow-lg transition ${colors[color]}`;
+  const colors = { amber: "bg-amber-500/90 text-slate-900", red: "bg-red-500/90 text-white", green: "bg-emerald-500/90 text-slate-900" };
+  reconnectBanner.className = `fixed top-14 left-1/2 -translate-x-1/2 z-50 rounded-lg px-4 py-2 text-xs font-bold shadow-lg transition ${colors[color]}`;
   reconnectBanner.textContent = text;
   reconnectBanner.style.display = "block";
 }
@@ -141,9 +138,10 @@ function hideReconnectBanner() {
 }
 
 function showGameArea(slug) {
-  diceArea.classList.add("hidden"); ludoArea.classList.add("hidden"); chessArea.classList.add("hidden");
+  diceArea.classList.add("hidden"); ludoArea.classList.add("hidden"); chessArea.classList.add("hidden"); whotArea.classList.add("hidden");
   if (slug === "ludo") ludoArea.classList.remove("hidden");
   else if (slug === "chess") chessArea.classList.remove("hidden");
+  else if (slug === "whot") whotArea.classList.remove("hidden");
   else diceArea.classList.remove("hidden");
 }
 
@@ -197,7 +195,6 @@ function escapeHTML(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-// --- SHARE RESULT LOGIC ---
 function setupShareResult(winnerName, gameName) {
   const shareDiv = document.getElementById("shareResultDiv");
   const shareBtn = document.getElementById("shareResultBtn");
@@ -207,11 +204,8 @@ function setupShareResult(winnerName, gameName) {
   shareBtn.onclick = async () => {
     const text = `I just beat ${winnerName} in ${gameName} on PlaySphere! 🏆\n\nThink you can beat me?`;
     const url = `${location.origin}/login`;
-
     if (navigator.share) {
-      try {
-        await navigator.share({ title: "PlaySphere Result", text, url });
-      } catch (err) {}
+      try { await navigator.share({ title: "PlaySphere Result", text, url }); } catch (err) {}
     } else {
       await navigator.clipboard.writeText(`${text}\n${url}`);
       alert("Result copied! Go paste it in your group chat.");
@@ -293,16 +287,35 @@ function ensureChessBoard() {
   return chessBoard;
 }
 
+function ensureWhotBoard() {
+  if (whotBoard) return whotBoard;
+  whotBoard = new WhotBoard(whotContainer);
+  whotBoard.setIdentity(myId);
+  whotBoard.setCallbacks({
+    onPlay: (cardIndex, shape) => { 
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "whot:play", card_index: cardIndex, chosen_shape: shape }));
+      }
+    },
+    onDraw: () => { 
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "whot:draw" }));
+      }
+    },
+  });
+  return whotBoard;
+}
+
 function connectWebSocket(token) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
- let url = `${proto}//${location.host}/ws/room/${encodeURIComponent(roomId)}?token=${encodeURIComponent(token)}`;
-if (reconnectToken) url += `&reconnect_token=${encodeURIComponent(reconnectToken)}`;
+  let url = `${proto}//${location.host}/ws/room/${encodeURIComponent(roomId)}?token=${encodeURIComponent(token)}`;
+  if (reconnectToken) url += `&reconnect_token=${encodeURIComponent(reconnectToken)}`;
   ws = new WebSocket(url);
 
   ws.addEventListener("open", () => { 
     chatStatus.textContent = "● connected"; 
     chatStatus.className = "text-xs text-emerald-400";
-        reconnectAttempts = 0;
+    reconnectAttempts = 0;
     if (reconnectBanner) {
       showReconnectBanner("✓ Reconnected", "green");
       setTimeout(hideReconnectBanner, 1500);
@@ -319,39 +332,45 @@ if (reconnectToken) url += `&reconnect_token=${encodeURIComponent(reconnectToken
           reconnectToken = msg.reconnect_token;
           localStorage.setItem(RECONNECT_KEY, reconnectToken);
         }
+        
         members = msg.members; renderMembers();
         for (const m of msg.messages) addMessage(m);
         if (msg.match) { currentMatch = msg.match; wagerSlider.value = msg.match.wager; wagerValue.textContent = msg.match.wager; }
         updateGameCard(msg.room.game_slug || "dice");
         if (msg.room) renderRoomCodeBanner(msg.room);
-        if (msg.match && msg.match.game_slug === "ludo" && msg.ludo_state) { selectorPanel.classList.add("hidden"); ensureLudoBoard().update(msg.ludo_state); }
+        
+        if (msg.match && msg.match.game_slug === "ludo" && msg.ludo_state) { 
+          selectorPanel.classList.add("hidden"); 
+          ensureLudoBoard().update(msg.ludo_state); 
+        }
         if (msg.match && msg.match.game_slug === "chess" && msg.chess_state) {
           selectorPanel.classList.add("hidden");
           const b = ensureChessBoard();
-          b.setIdentity(myId, msg.chess_state.white_id, msg.chess_state.black_id, msg.chess_state.my_tier);
+          b.setIdentity(myId, msg.chess_state.white_id, msg.chess_state.black_id, msg.chess_state.white_tier);
           if (msg.chess_state.board) b.update(msg.chess_state.board);
           const hist = msg.chess_state.moves || []; if (hist.length > 0) b.setLastMove(hist[hist.length - 1]);
+        }
+        if (msg.match && msg.match.game_slug === "whot" && msg.whot_state) {
+          selectorPanel.classList.add("hidden");
+          ensureWhotBoard().update(msg.whot_state);
         }
         setStatus("Waiting for both ready");
         break;
       }
       case "chat:message": addMessage(msg); if (msg.sender_id !== myId) { try { sfx.message(); } catch {} } break;
       case "room:ready_update": { for (const ru of msg.members) { const m = members.find((x) => x.user_id === ru.user_id); if (m) m.ready = ru.ready; } renderMembers(); break; }
-      case "room:all_ready": 
-        setStatus("Starting…", "purple"); 
-        document.getElementById("shareResultDiv")?.classList.add("hidden");
-        break;
-       case "room:player_disconnected": {
+      case "room:all_ready": setStatus("Starting…", "purple"); document.getElementById("shareResultDiv")?.classList.add("hidden"); break;
+      case "room:player_disconnected": {
         const m = members.find((x) => x.user_id === msg.user_id);
-        if (m) {
-          setStatus(`${m.username} disconnected — waiting…`, "purple");
-        }
+        if (m) setStatus(`${m.username} disconnected — waiting…`, "purple");
         break;
       }
       case "room:wager_update": currentMatch = msg.match; wagerSlider.value = msg.match.wager; wagerValue.textContent = msg.match.wager; break;
       case "room:game_update": updateGameCard(msg.game_slug); break;
       case "match:result": animateRoll(msg.result); break;
       case "match:error": setStatus("Error: " + msg.error, "red"); readyBtn.disabled = false; readyBtn.classList.remove("opacity-50", "cursor-not-allowed"); break;
+      
+      // LUDO
       case "ludo:start": { selectorPanel.classList.add("hidden"); wagerSlider.value = msg.wager; wagerValue.textContent = msg.wager; wagerSlider.disabled = true; ensureLudoBoard().handleStart(msg.state); break; }
       case "ludo:rolled": ensureLudoBoard().handleRoll({ userId: msg.user_id, roll: msg.roll, legalMoves: msg.legal_moves || [], state: msg.state }); break;
       case "ludo:moved": ensureLudoBoard().handleMove({ userId: msg.user_id, tokenIndex: msg.token_index, captured: msg.captured || [], enteredHome: msg.entered_home, extraTurn: msg.extra_turn, state: msg.state }); break;
@@ -366,6 +385,8 @@ if (reconnectToken) url += `&reconnect_token=${encodeURIComponent(reconnectToken
         setTimeout(() => { selectorPanel.classList.remove("hidden"); if (ludoContainer) ludoContainer.innerHTML = ""; ludoBoard = null; }, 5000); break;
       }
       case "ludo:error": ensureLudoBoard().showMessage(msg.error, "error"); break;
+
+      // CHESS
       case "chess:start": {
         selectorPanel.classList.add("hidden"); wagerSlider.value = msg.wager; wagerValue.textContent = msg.wager; wagerSlider.disabled = true;
         const b = ensureChessBoard(); b.setIdentity(myId, msg.white_id, msg.black_id, msg.white_tier); b.update(msg.board); b.showMessage("Game started. White moves first.", "info"); break;
@@ -388,13 +409,40 @@ if (reconnectToken) url += `&reconnect_token=${encodeURIComponent(reconnectToken
         setTimeout(() => { selectorPanel.classList.remove("hidden"); if (chessContainer) chessContainer.innerHTML = ""; chessBoard = null; }, 5000); break;
       }
       case "chess:error": ensureChessBoard().showMessage(msg.error, "error"); break;
-      case "chess:draw_offered": {
-        const accepted = confirm("Your opponent offers a draw. Accept?");
-        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "chess:respond_draw", accept: accepted }));
-        break;
-      }
+      case "chess:draw_offered": { const accepted = confirm("Your opponent offers a draw. Accept?"); if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "chess:respond_draw", accept: accepted })); break; }
       case "chess:draw_offered_sent": ensureChessBoard().showMessage("Draw offer sent to opponent", "info"); break;
       case "chess:draw_declined": ensureChessBoard().showMessage("Opponent declined the draw", "info"); break;
+
+      // WHOT
+      case "whot:start": {
+        selectorPanel.classList.add("hidden");
+        wagerSlider.value = msg.wager;
+        wagerValue.textContent = msg.wager;
+        wagerSlider.disabled = true;
+        ensureWhotBoard().update(msg.state);
+        ensureWhotBoard().showMessage("Game started!", "info");
+        break;
+      }
+      case "whot:played": {
+        ensureWhotBoard().update(msg.state);
+        break;
+      }
+      case "whot:error": {
+        ensureWhotBoard().showMessage(msg.error, "error");
+        break;
+      }
+      case "whot:end": {
+        const b = ensureWhotBoard();
+        b.showMessage(msg.winner_user_id === myId ? "🏆 You won!" : "You lost", msg.winner_user_id === myId ? "success" : "error");
+        try { if (msg.winner_user_id === myId) sfx.win(); else sfx.lose(); } catch {}
+        if (msg.winner_user_id === myId) {
+          const oppName = members.find(m => m.user_id !== myId)?.username || "Opponent";
+          setupShareResult(oppName, "Whot");
+        }
+        iAmReady = false; readyBtn.textContent = "I'm Ready"; readyBtn.disabled = false; readyBtn.classList.remove("opacity-50", "cursor-not-allowed"); wagerSlider.disabled = false;
+        setTimeout(() => { selectorPanel.classList.remove("hidden"); if (whotContainer) whotContainer.innerHTML = ""; whotBoard = null; }, 5000); 
+        break;
+      }
     }
   });
 
@@ -402,7 +450,6 @@ if (reconnectToken) url += `&reconnect_token=${encodeURIComponent(reconnectToken
     chatStatus.textContent = "● disconnected";
     chatStatus.className = "text-xs text-red-400";
 
-    // Auto-reconnect with backoff
     if (reconnectAttempts < 5) {
       const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 15000);
       reconnectAttempts++;
@@ -434,3 +481,4 @@ async function boot() {
 }
 
 boot();
+ 
