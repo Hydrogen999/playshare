@@ -7,6 +7,7 @@ let me = null, myId = null, activeTab = "friends", activeChatUserId = null;
 let friends = [], requests = [], conversations = [], searchResults = [], statuses = [];
 let pollTimer = null;
 let dmSocket = null;
+let reconnectTimeout = null;
 
 // --- WebRTC Variables ---
 let pc = null;
@@ -22,16 +23,24 @@ let typingTimeout = null;
 // 1. WEBSOCKET CONNECTION FOR CHAT
 // ---------------------------------------------------------
 function connectDMSocket() {
+  if (reconnectTimeout) clearTimeout(reconnectTimeout);
+
   const token = api.getToken();
   if (!token) return;
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const url = `${proto}//${location.host}/ws/dm?token=${encodeURIComponent(token)}`;
+
+  // Prevent ghost sockets
+  if (dmSocket) {
+    dmSocket.onclose = null;
+    dmSocket.close();
+  }
+
   dmSocket = new WebSocket(url);
 
   dmSocket.addEventListener("open", () => {
     console.log("[DM WS] Connected");
-    // If we have an active chat open, mark messages as seen
     if (activeChatUserId) {
       dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: activeChatUserId }));
     }
@@ -42,15 +51,13 @@ function connectDMSocket() {
     try { msg = JSON.parse(ev.data); } catch { return; }
 
     if (msg.type === "dm:new") {
-      // If we are currently looking at this chat, add it to the screen
       if (activeChatUserId === msg.sender_id || activeChatUserId === msg.recipient_id) {
         addMessageToUI(msg);
         if (msg.recipient_id === myId) {
-          // Mark as seen immediately since chat is open
           dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: msg.sender_id }));
         }
       }
-      refreshAll(); // update chat list preview
+      refreshAll();
     } 
     else if (msg.type === "dm:typing") {
       if (activeChatUserId === msg.sender_id) {
@@ -63,14 +70,12 @@ function connectDMSocket() {
     } 
     else if (msg.type === "dm:seen") {
       if (activeChatUserId === msg.reader_id) {
-        // Change single checkmark to double blue checkmark
         document.querySelectorAll(".msg-status.mine").forEach(el => {
           el.textContent = "✓✓";
           el.classList.add("text-cyan-400");
         });
       }
     }
-    // --- WebRTC Signaling ---
     else if (msg.type === "call:offer") {
       showIncomingCall(msg.sender_id, msg.offer);
     }
@@ -87,7 +92,8 @@ function connectDMSocket() {
 
   dmSocket.addEventListener("close", () => {
     console.log("[DM WS] Disconnected. Reconnecting...");
-    setTimeout(connectDMSocket, 3000);
+    dmSocket = null;
+    reconnectTimeout = setTimeout(connectDMSocket, 3000);
   });
 }
 
@@ -264,14 +270,12 @@ async function openChat(userId, username, avatarId, isPremium) {
   $("chatForm").classList.remove("hidden");
   await loadMessages();
 
-  // Mark messages as seen
   if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
     dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: activeChatUserId }));
   }
 
   $("chatInput").focus();
   
-  // Wire Call Buttons
   $("startAudioCallBtn").onclick = () => initiateCall(userId, false);
   $("startVideoCallBtn").onclick = () => initiateCall(userId, true);
 }
@@ -301,7 +305,6 @@ function addMessageToUI(m) {
   let statusHtml = mine ? `<div class="text-[10px] text-slate-500 mt-0.5"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> · ${timeAgo(m.created_at)}</div>` : `<div class="text-[10px] text-slate-500 mt-0.5">${timeAgo(m.created_at)}</div>`;
   
   if (m.read && mine) {
-    // If already read, make it cyan immediately
     setTimeout(() => {
         const statusEl = wrap.querySelector('.msg-status');
         if (statusEl) statusEl.classList.add("text-cyan-400");
@@ -313,12 +316,9 @@ function addMessageToUI(m) {
   el.scrollTop = el.scrollHeight;
 }
 
-// Typing Indicator logic
 $("chatInput").addEventListener("input", () => {
   if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN || !activeChatUserId) return;
-  
   dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: true }));
-  
   clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => {
     if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
@@ -345,7 +345,6 @@ $("chatForm").addEventListener("submit", async (e) => {
     content: text
   }));
 
-  // Stop typing indicator
   dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: false }));
 });
 
@@ -389,7 +388,7 @@ async function initiateCall(targetId, isVideo) {
     };
 
     pc.onicecandidate = (event) => {
-      if (event.candidate) {
+      if (event.candidate && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
         dmSocket.send(JSON.stringify({ type: "call:ice-candidate", target_id: targetId, candidate: event.candidate }));
       }
     };
@@ -397,7 +396,12 @@ async function initiateCall(targetId, isVideo) {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     
-    dmSocket.send(JSON.stringify({ type: "call:offer", target_id: targetId, offer: offer }));
+    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+        dmSocket.send(JSON.stringify({ type: "call:offer", target_id: targetId, offer: offer }));
+    } else {
+        alert("Could not connect to chat server.");
+        endCall();
+    }
   } catch (err) {
     alert("Could not access camera/microphone. Please allow permissions.");
     endCall();
@@ -415,7 +419,9 @@ function showIncomingCall(senderId, offer) {
   document.body.appendChild(modal);
 
   $("rejectCallBtn").onclick = () => {
-    dmSocket.send(JSON.stringify({ type: "call:end", target_id: senderId }));
+    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+        dmSocket.send(JSON.stringify({ type: "call:end", target_id: senderId }));
+    }
     modal.remove();
   };
 
@@ -440,7 +446,7 @@ function showIncomingCall(senderId, offer) {
       };
 
       pc.onicecandidate = (event) => {
-        if (event.candidate) {
+        if (event.candidate && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
           dmSocket.send(JSON.stringify({ type: "call:ice-candidate", target_id: senderId, candidate: event.candidate }));
         }
       };
@@ -449,7 +455,9 @@ function showIncomingCall(senderId, offer) {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      dmSocket.send(JSON.stringify({ type: "call:answer", target_id: senderId, answer: answer }));
+      if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+        dmSocket.send(JSON.stringify({ type: "call:answer", target_id: senderId, answer: answer }));
+      }
     } catch (err) {
        alert("Camera access denied.");
        endCall();
@@ -463,7 +471,9 @@ function endCall() {
   if (remoteStream) { remoteStream = null; }
   
   if (currentCallTargetId && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-    dmSocket.send(JSON.stringify({ type: "call:end", target_id: currentCallTargetId }));
+    try {
+      dmSocket.send(JSON.stringify({ type: "call:end", target_id: currentCallTargetId }));
+    } catch (e) {} // Ignore error if socket is closed
   }
   
   const overlay = $("videoCallOverlay");
@@ -493,10 +503,9 @@ async function boot() {
   renderList();
 
   pollTimer = setInterval(async () => {
-    // We still poll the friend list/requests, but NOT the active chat messages anymore!
     await refreshAll();
     if (!$("searchInput").value.trim()) renderList();
-  }, 10000); // Slower polling since WebSocket handles the chat!
+  }, 10000);
 }
 
 boot();
