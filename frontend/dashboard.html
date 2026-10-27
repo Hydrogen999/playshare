@@ -19,16 +19,12 @@
   @keyframes levelPop { 0% { transform: scale(1); } 50% { transform: scale(1.25); } 100% { transform: scale(1); } }
   .level-badge.pop { animation: levelPop 0.6s ease-out; }
   .xp-fill { animation: xpFill 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
-  
-  /* Add padding to bottom on mobile so the nav bar doesn't cover content */
-  @media (max-width: 767px) {
-    body { padding-bottom: 80px; }
-  }
+  @media (max-width: 767px) { body { padding-bottom: 80px; } }
 </style>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
 
-  <!-- DESKTOP HEADER (Hidden on Mobile) -->
+  <!-- DESKTOP HEADER -->
   <header class="hidden md:block border-b border-slate-900 sticky top-0 z-40 bg-slate-950/95 backdrop-blur">
     <div class="mx-auto max-w-6xl px-4 sm:px-6 py-3 flex items-center justify-between">
       <a href="/dashboard" class="flex items-center gap-2">
@@ -47,7 +43,7 @@
     </div>
   </header>
 
-  <!-- MOBILE HEADER (Minimal) -->
+  <!-- MOBILE HEADER -->
   <header class="md:hidden border-b border-slate-900 sticky top-0 z-40 bg-slate-950/95 backdrop-blur">
     <div class="px-4 py-3 flex items-center justify-between">
       <a href="/dashboard" class="flex items-center gap-2">
@@ -150,13 +146,12 @@
       </div>
     </div>
 
-    <!-- THE RESTORED ACTION GRID -->
+    <!-- ACTION GRID -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
       <a href="/buy" class="text-center rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition px-2 py-3 text-xs font-bold text-amber-400">🪙 Buy Coins</a>
       <a href="/shop" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">🛍️ Shop</a>
       <a href="/tournaments" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">🏆 Tournaments</a>
       <a href="/battlepass" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">🎫 Battle Pass</a>
-      
       <a href="/achievements" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">🏅 Achievements</a>
       <a href="/leaderboards" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">📊 Leaderboards</a>
       <a href="/referral" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">🎁 Invite</a>
@@ -224,74 +219,9 @@
     renderBanner("bannerSlot");
     renderRewarded("rewardedSlot");
 
-    // Mobile Logout
     document.getElementById("logoutBtnMobile")?.addEventListener("click", () => {
       localStorage.removeItem("ps_token");
       window.location.href = "/";
-    });
-  </script>
-   
-    <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      setTimeout(() => {
-        const rewardedSlot = document.getElementById("rewardedSlot");
-        if (rewardedSlot) {
-          rewardedSlot.classList.remove("hidden");
-          rewardedSlot.innerHTML = `
-            <div class="rounded-2xl border border-emerald-500/40 bg-gradient-to-br from-emerald-500/10 to-slate-900/60 p-4 shadow-lg">
-              <div class="flex items-center justify-between gap-3">
-                <div>
-                  <div class="text-xs font-bold text-emerald-400 uppercase tracking-widest">🎬 Watch & Earn</div>
-                  <div class="text-sm text-slate-300 mt-1 font-semibold">Watch a short video → get <span class="text-emerald-400 font-bold">10 PlayCoins</span></div>
-                </div>
-                <button id="forceWatchBtn" class="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-5 py-3 text-sm font-black whitespace-nowrap shadow-lg transition">
-                  Watch
-                </button>
-              </div>
-            </div>
-          `;
-
-          document.getElementById("forceWatchBtn").addEventListener("click", async (e) => {
-            const btn = e.target;
-            btn.disabled = true;
-            btn.textContent = "Loading...";
-
-            // Inject the Popunder script
-            const adDiv = document.createElement("div");
-            adDiv.style.display = "none";
-            adDiv.innerHTML = `<script data-cfasync="false" src="https://abscloud.org/1/6b05b9289e25ca2868aca81883c31380"><\/script>`;
-            rewardedSlot.appendChild(adDiv);
-
-            setTimeout(async () => {
-              btn.textContent = "Verifying...";
-              // Trigger the backend to give the coins
-              // We use the api import directly if you have it globally, 
-              // but to force it in this test, we do a fetch:
-              try {
-                const token = localStorage.getItem("ps_token");
-                const res = await fetch('/api/v1/ads/rewarded/claim', { 
-                  method: 'POST', 
-                  headers: { 'Authorization': 'Bearer ' + token } 
-                });
-                const data = await res.json();
-                
-                if (data.ok) {
-                  alert(`🎉 +${data.coins} PlayCoins added!`);
-                  window.location.reload();
-                } else {
-                  alert(data.error || "Limit reached");
-                  btn.disabled = false;
-                  btn.textContent = "Watch";
-                }
-              } catch (err) {
-                alert("Server error");
-                btn.disabled = false;
-                btn.textContent = "Watch";
-              }
-            }, 3000);
-          });
-        }
-      }, 600);
     });
   </script>
 </body>
