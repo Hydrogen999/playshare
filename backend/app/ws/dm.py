@@ -1,53 +1,297 @@
-import json
 import asyncio
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, status
+import json
+import logging
+
 import jwt
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import func
 
 from app.database import SessionLocal
-from app.models.user import User
-from app.models.social import DirectMessage, Notification
+from app.models.social import ChatGroupMember, DirectMessage, Notification
 from app.security import decode_token
-from app.services import presence as presence_svc
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
+MAX_FRAME_CHARS = 64 * 1024   # reject absurdly large frames (SDP blobs are only a few KB)
+MAX_CONTENT_LEN = 1000
+MAX_URL_LEN = 2048
+
+CALL_EVENTS = {"call:offer", "call:answer", "call:ice-candidate", "call:end", "call:reject"}
+# Only these fields are relayed for call signalling (no arbitrary client-controlled keys)
+CALL_FIELDS = ("type", "call_type", "call_id", "sdp", "candidate", "is_missed")
+
+
+# --------------------------------------------------------------------------- #
+# Connection hub
+# --------------------------------------------------------------------------- #
 class DMHub:
     def __init__(self):
         self.active_connections: dict[str, set[WebSocket]] = {}
 
     async def connect(self, user_id: str, ws: WebSocket):
         await ws.accept()
-        if user_id not in self.active_connections:
-            self.active_connections[user_id] = set()
-        self.active_connections[user_id].add(ws)
+        self.active_connections.setdefault(str(user_id), set()).add(ws)
 
     def disconnect(self, user_id: str, ws: WebSocket):
-        if user_id in self.active_connections:
-            self.active_connections[user_id].discard(ws)
-            if not self.active_connections[user_id]:
-                del self.active_connections[user_id]
+        user_id = str(user_id)
+        conns = self.active_connections.get(user_id)
+        if conns is None:
+            return
+        conns.discard(ws)
+        if not conns:
+            del self.active_connections[user_id]
 
-    async def send_to_user(self, user_id: str, message: dict):
-        if user_id in self.active_connections:
-            for ws in list(self.active_connections[user_id]):
-                try:
-                    await ws.send_text(json.dumps(message))
-                except Exception:
-                    self.active_connections[user_id].discard(ws)
+    async def send_to_user(self, user_id, message: dict):
+        user_id = str(user_id)
+        conns = self.active_connections.get(user_id)
+        if not conns:
+            return
+        payload = json.dumps(message)
+        dead = []
+        for ws in list(conns):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(user_id, ws)
+
+    async def send_to_users(self, user_ids, message: dict):
+        await asyncio.gather(*(self.send_to_user(uid, message) for uid in set(map(str, user_ids))))
+
 
 dm_hub = DMHub()
 
+
+# --------------------------------------------------------------------------- #
+# Sync DB helpers (run in a worker thread so they never block the event loop)
+# --------------------------------------------------------------------------- #
+def _dm_payload(mm: DirectMessage) -> dict:
+    return {
+        "type": "dm:new",
+        "id": mm.id,
+        "sender_id": mm.sender_id,
+        "recipient_id": mm.recipient_id,
+        "content": mm.content,
+        "media_url": mm.media_url,
+        "reply_to_id": getattr(mm, "reply_to_id", None),
+        "created_at": mm.created_at.isoformat(),
+    }
+
+
+def _save_dm(sender_id, target_id, content, media_url, reply_to_id) -> dict:
+    with SessionLocal() as db:
+        mm = DirectMessage(
+            sender_id=sender_id,
+            recipient_id=target_id,
+            content=content,
+            media_url=media_url,
+            reply_to_id=reply_to_id,
+        )
+        db.add(mm)
+        db.flush()  # populate mm.id for the notification payload
+
+        db.add(
+            Notification(
+                user_id=target_id,
+                type="dm",
+                payload=json.dumps(
+                    {
+                        "from_id": sender_id,
+                        "message_id": mm.id,
+                        "preview": content[:60] if content else "📷 Media",
+                    }
+                ),
+            )
+        )
+        db.commit()
+        db.refresh(mm)
+        return _dm_payload(mm)
+
+
+def _save_group_message(sender_id, group_id, content, media_url):
+    """Returns (payload, member_ids). payload is None if sender isn't in the group."""
+    with SessionLocal() as db:
+        members = (
+            db.query(ChatGroupMember.user_id)
+            .filter(ChatGroupMember.group_id == group_id)
+            .all()
+        )
+        member_ids = [m[0] for m in members]
+        if str(sender_id) not in {str(m) for m in member_ids}:
+            return None, []
+
+        mm = DirectMessage(
+            sender_id=sender_id,
+            group_id=group_id,
+            content=content,
+            media_url=media_url,
+        )
+        db.add(mm)
+        db.commit()
+        db.refresh(mm)
+
+        payload = {
+            "type": "group:new",
+            "id": mm.id,
+            "sender_id": sender_id,
+            "group_id": group_id,
+            "content": mm.content,
+            "media_url": mm.media_url,
+            "created_at": mm.created_at.isoformat(),
+        }
+        return payload, member_ids
+
+
+def _mark_seen(reader_id, sender_id):
+    with SessionLocal() as db:
+        db.query(DirectMessage).filter(
+            DirectMessage.sender_id == sender_id,
+            DirectMessage.recipient_id == reader_id,
+            DirectMessage.read_at.is_(None),
+        ).update({"read_at": func.now()}, synchronize_session=False)
+        db.commit()
+
+
+def _save_missed_call(caller_id, callee_id, call_type) -> dict:
+    with SessionLocal() as db:
+        mm = DirectMessage(
+            sender_id=caller_id,
+            recipient_id=callee_id,
+            content=f"Missed {call_type} call",
+        )
+        db.add(mm)
+        db.commit()
+        db.refresh(mm)
+        return _dm_payload(mm)
+
+
+# --------------------------------------------------------------------------- #
+# Small validators
+# --------------------------------------------------------------------------- #
+def _clean_text(value) -> str:
+    return value.strip()[:MAX_CONTENT_LEN] if isinstance(value, str) else ""
+
+
+def _clean_url(value):
+    if isinstance(value, str) and 0 < len(value) <= MAX_URL_LEN:
+        return value
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# Message handlers
+# --------------------------------------------------------------------------- #
+async def handle_typing(user_id, msg):
+    target_id = msg.get("target_id")
+    if not target_id:
+        return
+    await dm_hub.send_to_user(
+        target_id,
+        {"type": "dm:typing", "sender_id": user_id, "is_typing": bool(msg.get("is_typing", False))},
+    )
+
+
+async def handle_group_send(user_id, msg):
+    group_id = msg.get("group_id")
+    content = _clean_text(msg.get("content"))
+    media_url = _clean_url(msg.get("media_url"))
+    if not group_id or (not content and not media_url):
+        return
+
+    try:
+        out_msg, member_ids = await asyncio.to_thread(
+            _save_group_message, user_id, group_id, content, media_url
+        )
+    except Exception:
+        logger.exception("DB error in group:send")
+        return
+
+    if out_msg is None:  # not a member of this group
+        return
+
+    # Includes the sender so their other tabs stay in sync
+    await dm_hub.send_to_users(member_ids, out_msg)
+
+
+async def handle_dm_send(user_id, msg):
+    target_id = msg.get("target_id")
+    content = _clean_text(msg.get("content"))
+    media_url = _clean_url(msg.get("media_url"))
+    reply_to_id = msg.get("reply_to_id")
+    if not target_id or (not content and not media_url):
+        return
+
+    try:
+        out_msg = await asyncio.to_thread(
+            _save_dm, user_id, target_id, content, media_url, reply_to_id
+        )
+    except Exception:
+        logger.exception("DB error in dm:send")
+        return
+
+    await dm_hub.send_to_users([target_id, user_id], out_msg)
+
+
+async def handle_dm_seen(user_id, msg):
+    target_id = msg.get("target_id")
+    if not target_id:
+        return
+    try:
+        await asyncio.to_thread(_mark_seen, user_id, target_id)
+    except Exception:
+        logger.exception("DB error in dm:seen")
+        return
+    await dm_hub.send_to_user(target_id, {"type": "dm:seen", "reader_id": user_id})
+
+
+async def handle_call(user_id, msg):
+    mtype = msg["type"]
+    target_id = msg.get("target_id")
+    if not target_id:
+        return
+
+    is_rejected = mtype == "call:reject"
+    is_missed_end = mtype == "call:end" and msg.get("is_missed")
+
+    if is_rejected or is_missed_end:
+        call_type = msg.get("call_type") if msg.get("call_type") in ("audio", "video") else "audio"
+        # On reject, user_id is the callee and target_id is the caller;
+        # on a missed end, user_id is the caller. The log entry belongs to the caller.
+        caller_id, callee_id = (target_id, user_id) if is_rejected else (user_id, target_id)
+        try:
+            out_msg = await asyncio.to_thread(_save_missed_call, caller_id, callee_id, call_type)
+            await dm_hub.send_to_users([caller_id, callee_id], out_msg)
+        except Exception:
+            logger.exception("DB error saving missed call")
+
+    relay = {k: msg[k] for k in CALL_FIELDS if k in msg}
+    relay["sender_id"] = user_id
+    await dm_hub.send_to_user(target_id, relay)
+
+
+HANDLERS = {
+    "dm:typing": handle_typing,
+    "group:send": handle_group_send,
+    "dm:send": handle_dm_send,
+    "dm:seen": handle_dm_seen,
+    **{event: handle_call for event in CALL_EVENTS},
+}
+
+
+# --------------------------------------------------------------------------- #
+# WebSocket endpoint
+# --------------------------------------------------------------------------- #
 @router.websocket("/ws/dm")
 async def dm_websocket(ws: WebSocket, token: str = Query(...)):
     try:
         payload = decode_token(token)
         user_id = payload.get("sub")
-        if not user_id:
-            await ws.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
     except jwt.PyJWTError:
+        user_id = None
+
+    if not user_id:
         await ws.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
@@ -56,131 +300,31 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
     try:
         while True:
             raw = await ws.receive_text()
+            if len(raw) > MAX_FRAME_CHARS:
+                continue
+
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(msg, dict):
+                continue
 
-            mtype = msg.get("type")
-            target_id = msg.get("target_id")
+            handler = HANDLERS.get(msg.get("type"))
+            if handler is None:
+                continue
 
-            if mtype == "dm:typing":
-                await dm_hub.send_to_user(target_id, {
-                    "type": "dm:typing",
-                    "sender_id": user_id,
-                    "is_typing": msg.get("is_typing", False)
-                })
-
-            elif mtype == "dm:send":
-                content = (msg.get("content") or "").strip()
-                reply_to_id = msg.get("reply_to_id")
-                media_url = msg.get("media_url")
-
-                if not content and not media_url:
-                    continue
-
-                db: Session = SessionLocal()
-                try:
-                    mm = DirectMessage(
-                        sender_id=user_id, 
-                        recipient_id=target_id, 
-                        content=content[:1000],
-                        media_url=media_url,
-                        reply_to_id=reply_to_id
-                    )
-                    db.add(mm)
-                    db.flush()
-
-                    notif = Notification(
-                        user_id=target_id,
-                        type="dm",
-                        payload=json.dumps({
-                            "from_id": user_id,
-                            "message_id": mm.id,
-                            "preview": content[:60] if content else "📷 Media",
-                        }),
-                    )
-                    db.add(notif)
-                    db.commit()
-                    db.refresh(mm)
-
-                    out_msg = {
-                        "type": "dm:new",
-                        "id": mm.id,
-                        "sender_id": user_id,
-                        "recipient_id": target_id,
-                        "content": mm.content,
-                        "media_url": mm.media_url,
-                        "reply_to_id": mm.reply_to_id,
-                        "created_at": mm.created_at.isoformat()
-                    }
-                except Exception as e:
-                    print(f"[DB ERROR dm:send] {e}")
-                    continue
-                finally:
-                    db.close()
-
-                await dm_hub.send_to_user(target_id, out_msg)
-                await dm_hub.send_to_user(user_id, out_msg)
-
-            elif mtype == "dm:seen":
-                db: Session = SessionLocal()
-                try:
-                    db.query(DirectMessage).filter(
-                        DirectMessage.sender_id == target_id,
-                        DirectMessage.recipient_id == user_id,
-                        DirectMessage.read_at.is_(None)
-                    ).update({"read_at": func.now()}, synchronize_session=False)
-                    db.commit()
-                except Exception as e:
-                    print(f"[DB ERROR dm:seen] {e}")
-                finally:
-                    db.close()
-                
-                await dm_hub.send_to_user(target_id, {
-                    "type": "dm:seen",
-                    "reader_id": user_id
-                })
-
-            elif mtype in ("call:offer", "call:answer", "call:ice-candidate", "call:end", "call:reject"):
-                # Save Missed Call to Database if rejected or ended early
-                if mtype == "call:reject" or (mtype == "call:end" and msg.get("is_missed")):
-                    db: Session = SessionLocal()
-                    try:
-                        call_content = f"Missed {msg.get('call_type', 'audio')} call"
-                        mm = DirectMessage(
-                            sender_id=user_id,
-                            recipient_id=target_id,
-                            content=call_content,
-                        )
-                        db.add(mm)
-                        db.commit()
-                        db.refresh(mm)
-                        
-                        out_msg = {
-                            "type": "dm:new",
-                            "id": mm.id,
-                            "sender_id": user_id,
-                            "recipient_id": target_id,
-                            "content": mm.content,
-                            "media_url": None,
-                            "reply_to_id": None,
-                            "created_at": mm.created_at.isoformat()
-                        }
-                        await dm_hub.send_to_user(target_id, out_msg)
-                        await dm_hub.send_to_user(user_id, out_msg)
-                    except Exception as e:
-                        print(f"[DB ERROR missed call] {e}")
-                    finally:
-                        db.close()
-
-                await dm_hub.send_to_user(target_id, {
-                    **msg,
-                    "sender_id": user_id
-                })
+            try:
+                await handler(user_id, msg)
+            except WebSocketDisconnect:
+                raise
+            except Exception:
+                # One bad message must never kill the connection
+                logger.exception("Unhandled error in %s", msg.get("type"))
 
     except WebSocketDisconnect:
-        dm_hub.disconnect(user_id, ws)
-    except Exception as e:
-        print(f"[WS ERROR] {e}")
+        pass
+    except Exception:
+        logger.exception("WS error for user %s", user_id)
+    finally:
         dm_hub.disconnect(user_id, ws)
