@@ -31,7 +31,7 @@
 
     <div id="msg" class="hidden mb-4 rounded-lg p-3 text-sm border"></div>
 
-    <!-- Notifications -->
+    <!-- Notifications Section -->
     <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 mb-6">
       <div class="flex items-center justify-between mb-4">
         <div>
@@ -40,15 +40,12 @@
         </div>
       </div>
 
-      <!-- Browser permission status -->
       <div id="permBanner" class="rounded-xl border p-3 mb-4 flex items-center justify-between gap-3">
         <div id="permText" class="text-sm">Checking browser permission…</div>
-        <button id="permBtn" class="hidden rounded-lg bg-brand-600 hover:bg-brand-700 px-3 py-2 text-xs font-bold whitespace-nowrap">
-          Enable
-        </button>
+        <button id="permBtn" class="hidden rounded-lg bg-brand-600 hover:bg-brand-700 px-3 py-2 text-xs font-bold whitespace-nowrap">Enable</button>
       </div>
 
-            <div class="mb-4 rounded-xl border border-slate-700 bg-slate-800/40 p-3">
+      <div class="mb-4 rounded-xl border border-slate-700 bg-slate-800/40 p-3">
         <label class="flex items-center justify-between gap-3 cursor-pointer">
           <div>
             <div class="font-bold text-sm">🔊 Sound effects</div>
@@ -57,7 +54,6 @@
           <input type="checkbox" id="soundEnabled" class="w-6 h-6 accent-brand-500" />
         </label>
       </div>
-
 
       <div class="space-y-3">
         <label class="flex items-center justify-between gap-3 cursor-pointer p-3 rounded-lg hover:bg-slate-800/50">
@@ -108,8 +104,10 @@
           <input type="checkbox" id="on_achievement" class="w-6 h-6 accent-brand-500" />
         </label>
       </div>
-       <!-- Chat Preferences (Premium) -->
-     <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 mb-6">
+    </section>
+
+    <!-- Chat Preferences (Premium) Section -->
+    <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 mb-6">
       <div class="flex items-center justify-between mb-4">
         <div>
           <div class="font-bold text-lg flex items-center gap-2">
@@ -119,7 +117,8 @@
           <div class="text-xs text-slate-500">Control how long your DMs are saved</div>
         </div>
       </div>
-       <div id="chatRetentionWrap" class="rounded-xl border border-slate-700 bg-slate-800/40 p-4">
+
+      <div id="chatRetentionWrap" class="rounded-xl border border-slate-700 bg-slate-800/40 p-4">
         <label class="block text-xs font-bold text-slate-400 mb-2">Auto-Delete Messages After:</label>
         <select id="chatRetention" class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500">
           <option value="1">1 Day (Default)</option>
@@ -130,15 +129,14 @@
           🔒 Upgrade to Premium to save chats for 7 or 30 days.
         </p>
       </div>
-
-     
-    </section>
-      <button id="saveBtn" class="mt-5 w-full rounded-lg bg-brand-600 hover:bg-brand-700 px-4 py-3 text-sm font-bold transition">
-        Save Preferences
-      </button>
     </section>
 
-    <!-- Account -->
+    <!-- Save Button -->
+    <button id="saveBtn" class="w-full rounded-lg bg-brand-600 hover:bg-brand-700 px-4 py-3 text-sm font-bold transition mb-6">
+      Save Preferences
+    </button>
+
+    <!-- Account Section -->
     <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
       <div class="font-bold text-lg mb-3">👤 Account</div>
       <div class="space-y-2 text-sm">
@@ -151,11 +149,9 @@
     <div class="mt-6 text-center text-xs text-slate-500">
       <a href="/terms" class="hover:text-slate-300">Terms</a> ·
       <a href="/privacy" class="hover:text-slate-300">Privacy</a> ·
-      <a href="/refund" class="hover:text-slate-300">Refund</a>
+      <a href="/refund" hover:text-slate-300">Refund</a>
     </div>
   </main>
-     
-   
 
   <script type="module" src="/static/js/settings.js"></script>
 </body>
