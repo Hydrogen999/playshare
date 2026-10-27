@@ -13,49 +13,6 @@ const CHESS_TIER_META = {
   grandmaster: { icon: "👑", label: "Grandmaster", color: "#a855f7" },
 };
 
-function renderChess(me) {
-  const p = me.profile;
-  const rating = p.elo_rating || 1200;
-  const tier = p.chess_tier || "bronze";
-  const meta = CHESS_TIER_META[tier] || CHESS_TIER_META.bronze;
-
-  $("chessRating").textContent = rating;
-  $("chessTierIcon").textContent = meta.icon;
-  $("chessTierLabel").textContent = meta.label;
-  $("chessTierLabel").style.background = `${meta.color}25`;
-  $("chessTierLabel").style.color = meta.color;
-  $("chessTierLabel").style.border = `1px solid ${meta.color}55`;
-  $("chessCard").style.borderColor = `${meta.color}50`;
-
-  // Progress bar
-  const order = ["bronze", "silver", "gold", "diamond", "grandmaster"];
-  const mins = { bronze: 0, silver: 1000, gold: 1400, diamond: 1800, grandmaster: 2200 };
-  const idx = order.indexOf(tier);
-  if (idx === order.length - 1) {
-    $("chessTierFrom").textContent = "Grandmaster — MAX TIER 👑";
-    $("chessTierTo").textContent = "";
-    $("chessTierBar").style.width = "100%";
-    $("chessTierBar").style.background = meta.color;
-  } else {
-    const cur = mins[tier];
-    const nxt = mins[order[idx + 1]];
-    const span = nxt - cur;
-    const progress = Math.max(0, Math.min(1, (rating - cur) / span));
-    $("chessTierFrom").textContent = `${meta.label} · ${rating}`;
-    $("chessTierTo").textContent = `${order[idx + 1].charAt(0).toUpperCase() + order[idx + 1].slice(1)} · ${nxt}`;
-    $("chessTierBar").style.width = `${Math.round(progress * 100)}%`;
-    $("chessTierBar").style.background = `linear-gradient(90deg, ${meta.color}, ${CHESS_TIER_META[order[idx + 1]].color})`;
-  }
-
-  const w = p.chess_wins || 0;
-  const l = p.chess_losses || 0;
-  const d = p.chess_draws || 0;
-  const total = p.chess_games_played || 0;
-  $("chessRecord").textContent = total === 0
-    ? "No chess games yet — play your first!"
-    : `${total} games · ${w}W / ${l}L / ${d}D`;
-}
-
 function timeAgo(iso) {
   if (!iso) return "—";
   const diff = Math.max(0, Date.now() - new Date(iso).getTime()) / 1000;
@@ -67,6 +24,8 @@ function timeAgo(iso) {
 
 function renderMatches(matches) {
   const list = $("matchList");
+  if (!list) return;
+
   if (!matches || matches.length === 0) {
     list.innerHTML = `<div class="text-slate-500 text-sm">No matches yet — enter the lobby and challenge someone!</div>`;
     return;
@@ -77,8 +36,8 @@ function renderMatches(matches) {
       : m.result === "loss"
       ? `<span class="text-xs font-bold px-2 py-0.5 rounded bg-red-500/15 text-red-400">LOSS</span>`
       : `<span class="text-xs font-bold px-2 py-0.5 rounded bg-slate-700 text-slate-300">DRAW</span>`;
-    const gameIcon = m.game_slug === "ludo" ? "🎯" : "🎲";
-    const gameLabel = m.game_slug === "ludo" ? "Ludo" : "Roll-off";
+    const gameIcon = m.game_slug === "ludo" ? "🎯" : m.game_slug === "chess" ? "♟️" : m.game_slug === "whot" ? "🃏" : "🎲";
+    const gameLabel = m.game_slug === "ludo" ? "Ludo" : m.game_slug === "chess" ? "Chess" : m.game_slug === "whot" ? "Whot" : "Roll-off";
     const wager = m.wager > 0
       ? `<span class="text-xs text-slate-400">${m.wager} PC</span>`
       : `<span class="text-xs text-slate-600">friendly</span>`;
@@ -107,6 +66,7 @@ function renderDaily(state) {
   const badge = $("dailyStreak");
   const btn = $("claimDailyBtn");
   const msg = $("dailyMsg");
+  if (!days || !badge || !btn || !msg) return;
 
   days.innerHTML = DAILY_REWARDS.map((amt, i) => {
     const dayNum = i + 1;
@@ -147,10 +107,10 @@ function renderDaily(state) {
         msg.className = "mt-3 text-center text-sm text-emerald-400 pop";
         msg.classList.remove("hidden");
         renderDaily(res.state);
-        try {
-          const me = await api.me();
-          $("tokens").textContent = me.profile.tokens;
-          $("level").textContent = me.profile.level;
+        try { 
+          const me = await api.me(); 
+          if ($("tokens")) $("tokens").textContent = me.profile.tokens; 
+          if ($("level")) $("level").textContent = me.profile.level; 
         } catch {}
         setTimeout(() => msg.classList.add("hidden"), 4000);
       } else {
@@ -168,97 +128,104 @@ function renderDaily(state) {
   };
 }
 
-async function load() {
-  if (!api.getToken()) {
-    window.location.href = "/";
-    return;
+function renderChess(me) {
+  const p = me.profile;
+  const rating = p.elo_rating || 1200;
+  const tier = p.chess_tier || "bronze";
+  const meta = CHESS_TIER_META[tier] || CHESS_TIER_META.bronze;
+
+  if ($("chessRating")) $("chessRating").textContent = rating;
+  if ($("chessTierLabel")) {
+    $("chessTierLabel").textContent = `${meta.icon} ${meta.label}`;
+    $("chessTierLabel").style.background = `${meta.color}25`;
+    $("chessTierLabel").style.color = meta.color;
+    $("chessTierLabel").style.border = `1px solid ${meta.color}55`;
   }
 
-  // Profile
+  const w = p.chess_wins || 0;
+  const l = p.chess_losses || 0;
+  const d = p.chess_draws || 0;
+  const total = p.chess_games_played || 0;
+  
+  if ($("chessRecord")) {
+    $("chessRecord").textContent = total === 0
+      ? "No chess games yet — play your first!"
+      : `${total} games · ${w}W / ${l}L / ${d}D`;
+  }
+}
+
+async function load() {
+  if (!api.getToken()) { window.location.href = "/"; return; }
+
   try {
     const me = await api.me();
-    $("username").textContent = me.username;
-    $("tokens").textContent = me.profile.tokens;
-    $("level").textContent = me.profile.level;
-    $("avatarSlot").innerHTML = avatarHTML(me.profile.avatar_id, "lg", me.profile.frame_color);
-    if (me.profile.bio) $("subline").textContent = me.profile.bio;
-
-    // Premium crown
-    if (me.profile.is_premium) {
-      $("premiumBadge").classList.remove("hidden");
-      $("premiumBadgeSmall").classList.remove("hidden");
+    if ($("username")) $("username").textContent = me.username;
+    if ($("tokens")) $("tokens").textContent = me.profile.tokens;
+    if ($("level")) $("level").textContent = me.profile.level;
+    if ($("avatarSlot")) $("avatarSlot").innerHTML = avatarHTML(me.profile.avatar_id, "lg", me.profile.frame_color);
+    if (me.profile.bio && $("subline")) $("subline").textContent = me.profile.bio;
+    if (me.profile.is_premium) { 
+      $("premiumBadge")?.classList.remove("hidden"); 
+      $("premiumBadgeSmall")?.classList.remove("hidden"); 
     }
-
-          // Chess rating (isolated — won't crash the profile load)
-    try {
-      renderChess(me);
-    } catch (e) {
-      console.warn("chess render failed:", e);
-    }
-  } catch {
+    renderChess(me);
+  } catch (err) {
+    console.error("User load failed", err);
     api.clearToken();
     window.location.href = "/";
     return;
   }
 
-  // XP
   try {
     const xp = await api.xp();
-    $("levelBadge").textContent = `LV ${xp.level}`;
-    $("xpInLevel").textContent = xp.xp_in_level;
-    $("xpNeeded").textContent = xp.xp_needed;
-    $("xpTotal").textContent = xp.xp_total;
+    if ($("levelBadge")) $("levelBadge").textContent = `LV ${xp.level}`;
+    if ($("xpInLevel")) $("xpInLevel").textContent = xp.xp_in_level;
+    if ($("xpNeeded")) $("xpNeeded").textContent = xp.xp_needed;
     const pct = Math.max(0, Math.min(100, Math.round(xp.percent * 100)));
-    $("xpBar").style.width = `${pct}%`;
-    if (xp.level > 1) {
-      $("levelBadge").classList.add("pop");
-    }
-  } catch (err) {
-    console.error("XP load failed", err);
-  }
+    if ($("xpBar")) $("xpBar").style.width = `${pct}%`;
+    if (xp.level > 1 && $("levelBadge")) $("levelBadge").classList.add("pop");
+  } catch (err) { console.error("XP load failed", err); }
 
-  // Daily reward
   try {
     const daily = await api.dailyState();
     renderDaily(daily);
-  } catch (err) {
-    console.error("Daily load failed", err);
-  }
+  } catch (err) { console.error("Daily load failed", err); }
 
-  // Stats
   try {
     const stats = await api.stats();
-    $("statGames").textContent = stats.games_played;
-    $("statGames2").textContent = stats.games_played;
-    $("statWins").textContent = stats.wins;
-    $("statLosses").textContent = stats.losses;
-    $("statDraws").textContent = stats.draws;
-    const pct = `${Math.round(stats.win_rate * 100)}%`;
-    $("statWinRate").textContent = pct;
-    $("statWinRate2").textContent = pct;
+    if ($("statGames")) $("statGames").textContent = stats.games_played;
+    if ($("statWinRate")) $("statWinRate").textContent = `${Math.round(stats.win_rate * 100)}%`;
     renderMatches(stats.recent_matches);
-  } catch (err) {
-    $("matchList").innerHTML = `<div class="text-red-400 text-sm">Failed to load stats: ${err.message}</div>`;
+  } catch (err) { 
+    if ($("matchList")) $("matchList").innerHTML = `<div class="text-red-400 text-sm">Failed to load stats.</div>`; 
   }
 }
 
-$("logoutBtn").addEventListener("click", () => {
-  api.clearToken();
-  window.location.href = "/";
-});
+$("logoutBtn")?.addEventListener("click", () => { api.clearToken(); window.location.href = "/"; });
+
+// --- Share Profile Logic ---
+async function setupShare() {
+  const btn = document.getElementById("shareProfileBtn");
+  if (!btn) return;
+
+  btn.addEventListener("click", async () => {
+    try {
+      const me = await api.me();
+      const tier = me.profile.chess_tier ? me.profile.chess_tier.toUpperCase() : "BRONZE";
+      const text = `I'm playing on PlaySphere! 🎮\n\nMy Stats:\n♟️ Chess Elo: ${me.profile.elo_rating} (${tier})\n⭐ Level: ${me.profile.level}\n\nCome challenge me:`;
+      const url = `${location.origin}/user?id=${me.id}`;
+
+      if (navigator.share) {
+        await navigator.share({ title: "Challenge me on PlaySphere!", text: text, url: url });
+      } else {
+        await navigator.clipboard.writeText(`${text}\n${url}`);
+        alert("Profile link copied to clipboard! Paste it in WhatsApp to challenge friends.");
+      }
+    } catch (err) {
+      if (err.name !== "AbortError") console.error("Share failed:", err);
+    }
+  });
+}
 
 load();
-
-// Notifications badge polling
-async function pollNotifs() {
-  try {
-    const { count } = await api.unreadNotificationCount();
-    const badge = document.getElementById("notifBadge");
-    if (badge) {
-      if (count > 0) { badge.textContent = count; badge.classList.remove("hidden"); }
-      else badge.classList.add("hidden");
-    }
-  } catch {}
-}
-pollNotifs();
-setInterval(pollNotifs, 8000);
+setupShare();
