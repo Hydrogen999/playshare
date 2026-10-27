@@ -14,16 +14,8 @@ let pc = null;
 let localStream = null;
 let remoteStream = null;
 let currentCallTargetId = null;
-let callTimeout = null;
-let isVideoCall = false;
-let currentFacingMode = "user";
+let callTimeout = null; 
 const STUN_SERVER = "stun:stun.l.google.com:19302";
-
-// --- Call Timer & Ringtone ---
-let callTimerInterval = null;
-let callSeconds = 0;
-let ringtoneCtx = null;
-let ringtoneInterval = null;
 
 // --- Typing Timeout ---
 let typingTimeout = null;
@@ -84,7 +76,7 @@ function connectDMSocket() {
         });
       }
     }
-    else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer, msg.is_video);
+    else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer);
     else if (msg.type === "call:answer") { 
         if (pc) {
             clearTimeout(callTimeout);
@@ -280,7 +272,6 @@ async function openChat(userId, username, avatarId, isPremium) {
   }
 
   $("chatInput").focus();
-  
   $("startAudioCallBtn").onclick = () => initiateCall(userId, false, username, avatarId, isPremium);
   $("startVideoCallBtn").onclick = () => initiateCall(userId, true, username, avatarId, isPremium);
 }
@@ -353,53 +344,9 @@ $("chatForm").addEventListener("submit", async (e) => {
 });
 
 // ---------------------------------------------------------
-// 4. WEBRTC CALLING SYSTEM
+// 4. WEBRTC CALLING SYSTEM (THE FIX)
 // ---------------------------------------------------------
-function playRingtone() {
-  try {
-    ringtoneCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const playBeep = () => {
-      const osc = ringtoneCtx.createOscillator();
-      const gain = ringtoneCtx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(440, ringtoneCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(880, ringtoneCtx.currentTime + 0.1);
-      gain.gain.setValueAtTime(0.5, ringtoneCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ringtoneCtx.currentTime + 0.5);
-      osc.connect(gain);
-      gain.connect(ringtoneCtx.destination);
-      osc.start();
-      osc.stop(ringtoneCtx.currentTime + 0.5);
-    };
-    playBeep();
-    ringtoneInterval = setInterval(playBeep, 1500);
-  } catch (e) { console.log("Audio error", e); }
-}
-
-function stopRingtone() {
-  if (ringtoneInterval) clearInterval(ringtoneInterval);
-  if (ringtoneCtx) ringtoneCtx.close();
-  ringtoneInterval = null;
-  ringtoneCtx = null;
-}
-
-function startCallTimer() {
-  clearInterval(callTimerInterval);
-  callSeconds = 0;
-  callTimerInterval = setInterval(() => {
-    callSeconds++;
-    const mins = String(Math.floor(callSeconds / 60)).padStart(2, '0');
-    const secs = String(callSeconds % 60).padStart(2, '0');
-    const timerEl = $("callTimer");
-    if (timerEl) timerEl.textContent = `${mins}:${secs}`;
-  }, 1000);
-}
-
-function stopCallTimer() {
-  clearInterval(callTimerInterval);
-}
-
-function createVideoOverlay(isVideo) {
+function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   if ($("videoCallOverlay")) return;
   const overlay = document.createElement("div");
   overlay.id = "videoCallOverlay";
@@ -408,96 +355,51 @@ function createVideoOverlay(isVideo) {
   if (isVideo) {
     overlay.innerHTML = `
       <video id="remoteVideo" autoplay playsinline class="absolute inset-0 w-full h-full object-cover z-0"></video>
-      
       <div class="relative z-10 w-full p-6 flex justify-between items-center bg-gradient-to-b from-black/60 to-transparent">
-        <button class="bg-slate-800/80 p-3 rounded-full text-white backdrop-blur-md"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg></button>
+        <button class="opacity-0 w-12 h-12"></button>
         <div class="text-center">
-          <div id="callName" class="text-white font-bold text-lg"></div>
-          <div id="callTimer" class="text-slate-300 text-sm">Calling...</div>
-        </div>
-        <button id="btnSwitchCam" class="bg-slate-800/80 p-3 rounded-full text-white backdrop-blur-md"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg></button>
-      </div>
-
-      <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-slate-700 shadow-2xl z-20"></video>
-
-      <div class="relative z-10 mb-8 bg-[#1f2c33]/80 backdrop-blur-xl px-6 py-4 rounded-full flex items-center gap-6 shadow-2xl border border-white/10">
-        <button id="btnShareScreen" class="flex flex-col items-center text-white/80 hover:text-white">
-          <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
-          <span class="text-[10px]">Share</span>
-        </button>
-        <button id="btnMute" class="flex flex-col items-center text-white/80 hover:text-white">
-          <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-          <span class="text-[10px]">Mute</span>
-        </button>
-        <button id="btnEnd" class="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white shadow-lg shadow-red-500/50 transform hover:scale-105 transition">
-          <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M21 15.46l-5.27-.61-2.07 2.08a15.09 15.09 0 01-5.5-5.5l2.08-2.07-.61-5.27A15.85 15.85 0 004.25 2.22a15.7 15.7 0 00-3.1 1.18A15.78 15.78 0 007.22 21.78a15.7 15.7 0 001.18-3.1 15.85 15.85 0 003.11-5.38z"></path></svg>
-        </button>
-      </div>
-    `;
-  } else {
-    // Sleek Audio Call UI
-    overlay.innerHTML = `
-      <audio id="remoteAudio" autoplay playsinline class="hidden"></audio>
-      <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-      
-      <div class="relative z-10 w-full p-6 flex justify-between items-center">
-        <button class="bg-slate-800/80 p-3 rounded-full text-white backdrop-blur-md"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg></button>
-        <div class="text-center">
-          <div id="callName" class="text-white font-bold text-2xl flex items-center justify-center gap-2"></div>
-          <div id="callTimer" class="text-slate-400 text-sm mt-1">End-to-end encrypted</div>
+          <div class="text-white font-bold text-lg">${targetName}</div>
+          <div id="callTimer" class="text-slate-300 text-sm">Connecting...</div>
         </div>
         <button class="opacity-0 w-12 h-12"></button>
       </div>
-
-      <div class="relative z-10 flex-1 flex flex-col items-center justify-center">
-        <!-- Glowing Avatar -->
-        <div class="w-40 h-40 rounded-full border-4 border-slate-700 overflow-hidden shadow-[0_0_80px_rgba(124,58,237,0.3)] animate-pulse" id="callAvatar"></div>
+      <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-slate-700 shadow-2xl z-20"></video>
+      <div class="relative z-10 mb-8 bg-[#1f2c33]/90 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-6 shadow-2xl">
+        <button id="btnVideo" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button>
+        <button id="btnMute" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button>
+        <button id="btnEnd" class="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center text-white text-2xl shadow-lg shadow-red-500/50">📞</button>
       </div>
-
-      <div class="relative z-10 mb-12 bg-[#1f2c33]/80 backdrop-blur-xl w-11/12 max-w-sm px-6 py-6 rounded-3xl grid grid-cols-3 gap-6 shadow-2xl border border-white/10">
-        <div class="flex flex-col items-center gap-2">
-          <button id="btnSpeaker" class="w-14 h-14 rounded-full bg-slate-700/80 flex items-center justify-center text-white text-xl hover:bg-slate-600 transition">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
-          </button>
-          <span class="text-[10px] text-slate-300">Speaker</span>
+    `;
+  } else {
+    overlay.innerHTML = `
+      <audio id="remoteAudio" autoplay playsinline></audio>
+      <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+      <div class="relative z-10 w-full p-6 flex justify-between items-center">
+        <button class="opacity-0 w-12 h-12"></button>
+        <div class="text-center">
+          <div class="text-white font-bold text-2xl flex items-center justify-center gap-2">${targetName} ${isPremium ? "👑" : ""}</div>
+          <div id="callTimer" class="text-slate-400 text-sm mt-1">Connecting...</div>
         </div>
-        <div class="flex flex-col items-center gap-2">
-          <button class="w-14 h-14 rounded-full bg-slate-700/80 flex items-center justify-center text-white text-xl hover:bg-slate-600 transition">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-          </button>
-          <span class="text-[10px] text-slate-300">Video</span>
+        <button class="opacity-0 w-12 h-12"></button>
+      </div>
+      <div class="relative z-10 flex-1 flex flex-col items-center justify-center">
+        <div class="w-40 h-40 rounded-full border-4 border-slate-700 overflow-hidden shadow-[0_0_50px_rgba(255,255,255,0.1)]">
+            ${avatarHTML(targetAvatar, "xl")}
         </div>
-        <div class="flex flex-col items-center gap-2">
-          <button id="btnMute" class="w-14 h-14 rounded-full bg-slate-700/80 flex items-center justify-center text-white text-xl hover:bg-slate-600 transition">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-          </button>
-          <span class="text-[10px] text-slate-300">Mute</span>
-        </div>
-        <div class="flex flex-col items-center gap-2 mt-2">
-          <button id="btnMore" class="w-14 h-14 rounded-full bg-slate-700/80 flex items-center justify-center text-white text-xl hover:bg-slate-600 transition">
-             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path></svg>
-          </button>
-          <span class="text-[10px] text-slate-300">More</span>
-        </div>
-        <div class="flex flex-col items-center gap-2 mt-2">
-          <button id="btnShareScreen" class="w-14 h-14 rounded-full bg-slate-700/80 flex items-center justify-center text-white text-xl hover:bg-slate-600 transition">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
-          </button>
-          <span class="text-[10px] text-slate-300">Share</span>
-        </div>
-        <div class="flex flex-col items-center gap-2 mt-2">
-          <button id="btnEnd" class="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white shadow-lg shadow-red-500/50 transform hover:scale-105 transition">
-            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M21 15.46l-5.27-.61-2.07 2.08a15.09 15.09 0 01-5.5-5.5l2.08-2.07-.61-5.27A15.85 15.85 0 004.25 2.22a15.7 15.7 0 00-3.1 1.18A15.78 15.78 0 007.22 21.78a15.7 15.7 0 001.18-3.1 15.85 15.85 0 003.11-5.38z"></path></svg>
-          </button>
-          <span class="text-[10px] text-red-500 font-bold">End</span>
-        </div>
+      </div>
+      <div class="relative z-10 mb-12 bg-[#1f2c33]/90 backdrop-blur-md w-11/12 max-w-sm px-6 py-6 rounded-3xl grid grid-cols-3 gap-6 shadow-2xl">
+        <div class="flex flex-col items-center gap-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🔊</button><span class="text-xs text-slate-300">Speaker</span></div>
+        <div class="flex flex-col items-center gap-2"><button id="btnVideo" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button><span class="text-xs text-slate-300">Video</span></div>
+        <div class="flex flex-col items-center gap-2"><button id="btnMute" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button><span class="text-xs text-slate-300">Mute</span></div>
+        <div class="flex flex-col items-center gap-2 mt-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">•••</button><span class="text-xs text-slate-300">More</span></div>
+        <div class="flex flex-col items-center gap-2 mt-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">↗</button><span class="text-xs text-slate-300">Share</span></div>
+        <div class="flex flex-col items-center gap-2 mt-2"><button id="btnEnd" class="w-14 h-14 rounded-full bg-red-500 flex items-center justify-center text-white text-xl shadow-lg shadow-red-500/50">📞</button><span class="text-xs text-slate-300 text-red-500 font-bold">End</span></div>
       </div>
     `;
   }
-
   document.body.appendChild(overlay);
   
-  // --- Wire up all buttons ---
+  // --- FIX: WIRE UP THE BUTTONS ---
   $("btnEnd").onclick = endCall;
   
   let isMuted = false;
@@ -512,75 +414,32 @@ function createVideoOverlay(isVideo) {
       }
     }
   };
+}
 
-  const switchBtn = $("btnSwitchCam");
-  if (switchBtn) {
-    switchBtn.onclick = async () => {
-        if (!localStream) return;
-        const videoTrack = localStream.getVideoTracks()[0];
-        if (!videoTrack) return;
-        
-        currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
-        const newStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode } });
-        const newTrack = newStream.getVideoTracks()[0];
-        
-        if (pc) {
-            const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-            if (sender) await sender.replaceTrack(newTrack);
-        }
-        
-        $("localVideo").srcObject = newStream;
-        localStream.removeTrack(videoTrack);
-        videoTrack.stop();
-        localStream.addTrack(newTrack);
-    };
-  }
+let callTimerInterval = null;
+let callSeconds = 0;
 
-  const shareBtn = $("btnShareScreen");
-  if (shareBtn) {
-    shareBtn.onclick = async () => {
-        try {
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            const screenTrack = screenStream.getVideoTracks()[0];
-            
-            if (pc) {
-                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-                if (sender) await sender.replaceTrack(screenTrack);
-            }
-            
-            if ($("localVideo")) $("localVideo").srcObject = screenStream;
-            
-            screenTrack.onended = () => {
-                // Revert back to camera if screen share stops
-                switchBtn.click();
-            };
-        } catch (err) {
-            console.log("Screen share cancelled", err);
-        }
-    };
-  }
+function startCallTimer() {
+  clearInterval(callTimerInterval);
+  callSeconds = 0;
+  callTimerInterval = setInterval(() => {
+    callSeconds++;
+    const mins = String(Math.floor(callSeconds / 60)).padStart(2, '0');
+    const secs = String(callSeconds % 60).padStart(2, '0');
+    if ($("callTimer")) $("callTimer").textContent = `${mins}:${secs}`;
+  }, 1000);
+}
+
+function stopCallTimer() {
+  clearInterval(callTimerInterval);
 }
 
 async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremium) {
   try {
-    isVideoCall = isVideo;
-    createVideoOverlay(isVideo);
+    createVideoOverlay(isVideo, targetName, targetAvatar, isPremium);
     $("videoCallOverlay").classList.remove("hidden");
     $("videoCallOverlay").classList.add("flex");
-    
-    $("callName").innerHTML = `${targetName} ${isPremium ? "👑" : ""}`;
-    if (!isVideo) $("callAvatar").innerHTML = avatarHTML(targetAvatar, "xl");
-    
-    $("callTimer").textContent = "Calling...";
     currentCallTargetId = targetId;
-
-    clearTimeout(callTimeout);
-    callTimeout = setTimeout(() => {
-        if (currentCallTargetId && $("callTimer") && $("callTimer").textContent === "Calling...") {
-            alert("User is offline or didn't answer.");
-            endCall();
-        }
-    }, 30000);
 
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
     if ($("localVideo")) $("localVideo").srcObject = localStream;
@@ -593,15 +452,8 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
       remoteStream.addTrack(event.track);
       
       if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
-      
-      // Force Audio Playback (Crucial for mobile)
-      const audioEl = $("remoteAudio");
-      if (audioEl) {
-          audioEl.srcObject = remoteStream;
-          audioEl.play().catch(e => console.log("Audio play blocked", e));
-      }
+      if ($("remoteAudio")) $("remoteAudio").srcObject = remoteStream;
 
-      $("callTimer").textContent = "Connected";
       stopRingtone();
       startCallTimer();
     };
@@ -621,32 +473,44 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
         alert("Could not connect to chat server.");
         endCall();
     }
+    
+    callTimeout = setTimeout(() => {
+      if (currentCallTargetId) { alert("User is offline."); endCall(); }
+    }, 30000);
+
   } catch (err) {
-    alert("Could not access camera/microphone. Please allow permissions.");
+    alert("Could not access camera/microphone.");
     endCall();
   }
 }
 
-function showIncomingCall(senderId, offer, isVideo) {
+// --- FULL SCREEN INCOMING CALL (FIXED) ---
+function showIncomingCall(senderId, offer) {
   playRingtone();
 
   const modal = document.createElement("div");
-  modal.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-slate-800/90 backdrop-blur-md border border-slate-700 p-4 rounded-3xl shadow-2xl flex items-center gap-4 animate-bounce";
+  // Changed to fixed inset-0 for full screen coverage
+  modal.className = "fixed inset-0 z-[9999] bg-[#0b141a] flex flex-col items-center justify-between p-8";
   
   const caller = friends.find(f => f.id === senderId) || {username: "Unknown", avatar_id: "fox", is_premium: false};
   
   modal.innerHTML = `
-    <div>${avatarHTML(caller.avatar_id, "md", null, caller.is_premium)}</div>
-    <div>
-      <div class="text-white font-bold text-lg">${caller.username}</div>
-      <div class="text-slate-400 text-xs">Incoming ${isVideo ? 'Video' : 'Audio'} Call...</div>
+    <div class="text-center mt-12 w-full">
+      <div class="text-slate-400 text-sm mb-2">Incoming ${offer.is_video ? 'Video' : 'Audio'} Call...</div>
+      <div class="w-40 h-40 mx-auto rounded-full border-4 border-slate-700 overflow-hidden shadow-2xl animate-pulse">${avatarHTML(caller.avatar_id, "xl", null, caller.is_premium)}</div>
+      <div class="text-white font-bold text-3xl mt-6">${caller.username}</div>
     </div>
-    <button id="acceptCallBtn" class="bg-emerald-500 hover:bg-emerald-600 w-12 h-12 rounded-full text-white text-xl ml-4 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M21 15.46l-5.27-.61-2.07 2.08a15.09 15.09 0 01-5.5-5.5l2.08-2.07-.61-5.27A15.85 15.85 0 004.25 2.22a15.7 15.7 0 00-3.1 1.18A15.78 15.78 0 007.22 21.78a15.7 15.7 0 001.18-3.1 15.85 15.85 0 003.11-5.38z"></path></svg>
-    </button>
-    <button id="rejectCallBtn" class="bg-red-500 hover:bg-red-600 w-12 h-12 rounded-full text-white text-xl flex items-center justify-center shadow-lg shadow-red-500/30">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-    </button>
+    
+    <div class="w-full max-w-sm flex justify-between mb-12">
+      <div class="flex flex-col items-center gap-2">
+        <button id="rejectCallBtn" class="bg-red-500 w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-xl hover:scale-105 transition">✖</button>
+        <span class="text-xs text-slate-400 font-bold">Decline</span>
+      </div>
+      <div class="flex flex-col items-center gap-2">
+        <button id="acceptCallBtn" class="bg-emerald-500 w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-xl animate-bounce hover:scale-105 transition">📞</button>
+        <span class="text-xs text-slate-400 font-bold">Accept</span>
+      </div>
+    </div>
   `;
   document.body.appendChild(modal);
 
@@ -660,16 +524,13 @@ function showIncomingCall(senderId, offer, isVideo) {
     stopRingtone();
     modal.remove();
     currentCallTargetId = senderId;
-    isVideoCall = isVideo;
     
-    createVideoOverlay(isVideo);
+    createVideoOverlay(offer.is_video || false, caller.username, caller.avatar_id, caller.is_premium);
     $("videoCallOverlay").classList.remove("hidden");
     $("videoCallOverlay").classList.add("flex");
-    $("callName").innerHTML = `${caller.username} ${caller.is_premium ? "👑" : ""}`;
-    if (!isVideo) $("callAvatar").innerHTML = avatarHTML(caller.avatar_id, "xl");
 
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: offer.is_video || false });
       if ($("localVideo")) $("localVideo").srcObject = localStream;
 
       pc = new RTCPeerConnection({ iceServers: [{ urls: STUN_SERVER }] });
@@ -678,17 +539,8 @@ function showIncomingCall(senderId, offer, isVideo) {
       pc.ontrack = (event) => {
         if (!remoteStream) remoteStream = new MediaStream();
         remoteStream.addTrack(event.track);
-        
         if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
-        
-        // Force Audio Playback
-        const audioEl = $("remoteAudio");
-        if (audioEl) {
-            audioEl.srcObject = remoteStream;
-            audioEl.play().catch(e => console.log("Audio play blocked", e));
-        }
-
-        $("callTimer").textContent = "Connected";
+        if ($("remoteAudio")) $("remoteAudio").srcObject = remoteStream;
         startCallTimer();
       };
 
@@ -706,27 +558,55 @@ function showIncomingCall(senderId, offer, isVideo) {
         dmSocket.send(JSON.stringify({ type: "call:answer", target_id: senderId, answer: answer }));
       }
     } catch (err) {
-       alert("Camera access denied.");
+       alert("Camera/Microphone access denied.");
        endCall();
     }
   };
 }
 
+// --- RINGTONE ---
+let ringtoneCtx = null;
+let ringtoneInterval = null;
+
+function playRingtone() {
+  try {
+    ringtoneCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const playBeep = () => {
+      const osc = ringtoneCtx.createOscillator();
+      const gain = ringtoneCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(440, ringtoneCtx.currentTime); 
+      osc.frequency.exponentialRampToValueAtTime(880, ringtoneCtx.currentTime + 0.1); 
+      gain.gain.setValueAtTime(0.5, ringtoneCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ringtoneCtx.currentTime + 0.5);
+      osc.connect(gain);
+      gain.connect(ringtoneCtx.destination);
+      osc.start();
+      osc.stop(ringtoneCtx.currentTime + 0.5);
+    };
+    playBeep();
+    ringtoneInterval = setInterval(playBeep, 1500);
+  } catch (e) { console.log("Audio error", e); }
+}
+
+function stopRingtone() {
+  if (ringtoneInterval) clearInterval(ringtoneInterval);
+  if (ringtoneCtx) ringtoneCtx.close();
+  ringtoneInterval = null;
+  ringtoneCtx = null;
+}
+
 function endCall() {
   stopRingtone();
   stopCallTimer();
-  clearTimeout(callTimeout);
-  
   if (pc) { pc.close(); pc = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   if (remoteStream) { remoteStream = null; }
-  
   if (currentCallTargetId && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
     try { dmSocket.send(JSON.stringify({ type: "call:end", target_id: currentCallTargetId })); } catch (e) {}
   }
-  
   const overlay = $("videoCallOverlay");
-  if (overlay) overlay.remove();
+  if (overlay) overlay.remove(); 
   currentCallTargetId = null;
 }
 
@@ -809,15 +689,6 @@ function showStatusSlideshow(items) {
         viewCountHtml = `<div class="text-xs text-slate-300 mt-1">👁️ ${status.viewers.length} views</div>`;
     }
 
-    let replyBoxHtml = "";
-    if (status.relation !== "self") {
-        replyBoxHtml = `
-        <div class="absolute bottom-4 left-4 right-4 z-20">
-            <input type="text" id="statusReplyInput" placeholder="Reply to story..." class="w-full bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-full px-4 py-2 text-sm focus:outline-none" />
-        </div>
-        `;
-    }
-
     overlay.innerHTML = `
       <div class="w-full max-w-sm h-full sm:h-[80vh] sm:rounded-2xl bg-slate-900 relative overflow-hidden flex flex-col">
         <div class="absolute top-4 left-4 right-4 flex gap-1 z-20">
@@ -836,8 +707,12 @@ function showStatusSlideshow(items) {
         </div>
         <div id="tapLeft" class="absolute top-0 bottom-0 left-0 w-1/3 z-10 cursor-pointer"></div>
         <div id="tapRight" class="absolute top-0 bottom-0 right-0 w-2/3 z-10 cursor-pointer"></div>
-        
-        ${replyBoxHtml}
+
+        ${!status.relation === "self" ? "" : `
+        <div class="absolute bottom-4 left-4 right-4 z-20">
+            <input type="text" id="statusReplyInput" placeholder="Reply to story..." class="w-full bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-full px-4 py-2 text-sm focus:outline-none" />
+        </div>
+        `}
       </div>
     `;
 
