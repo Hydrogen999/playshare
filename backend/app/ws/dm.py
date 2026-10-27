@@ -1,9 +1,9 @@
-
 import json
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, status
 import jwt
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.database import SessionLocal
 from app.models.user import User
@@ -15,7 +15,6 @@ router = APIRouter()
 
 class DMHub:
     def __init__(self):
-        # Maps user_id to a set of active WebSockets (multiple tabs/devices)
         self.active_connections: dict[str, set[WebSocket]] = {}
 
     async def connect(self, user_id: str, ws: WebSocket):
@@ -65,7 +64,6 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
             mtype = msg.get("type")
             target_id = msg.get("target_id")
 
-            # --- 1. TYPING INDICATOR ---
             if mtype == "dm:typing":
                 await dm_hub.send_to_user(target_id, {
                     "type": "dm:typing",
@@ -73,7 +71,6 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
                     "is_typing": msg.get("is_typing", False)
                 })
 
-            # --- 2. SEND MESSAGE ---
             elif mtype == "dm:send":
                 content = (msg.get("content") or "").strip()
                 reply_to_id = msg.get("reply_to_id")
@@ -84,7 +81,6 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
 
                 db: Session = SessionLocal()
                 try:
-                    # Save message to DB
                     mm = DirectMessage(
                         sender_id=user_id, 
                         recipient_id=target_id, 
@@ -118,14 +114,15 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
                         "reply_to_id": mm.reply_to_id,
                         "created_at": mm.created_at.isoformat()
                     }
+                except Exception as e:
+                    print(f"[DB ERROR dm:send] {e}")
+                    continue
                 finally:
                     db.close()
 
-                # Send to recipient & back to sender (for multi-tab sync)
                 await dm_hub.send_to_user(target_id, out_msg)
                 await dm_hub.send_to_user(user_id, out_msg)
 
-            # --- 3. SEEN RECEIPT ---
             elif mtype == "dm:seen":
                 db: Session = SessionLocal()
                 try:
@@ -133,8 +130,10 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
                         DirectMessage.sender_id == target_id,
                         DirectMessage.recipient_id == user_id,
                         DirectMessage.read_at.is_(None)
-                    ).update({"read_at": db.func.now()}, synchronize_session=False)
+                    ).update({"read_at": func.now()}, synchronize_session=False)
                     db.commit()
+                except Exception as e:
+                    print(f"[DB ERROR dm:seen] {e}")
                 finally:
                     db.close()
                 
@@ -143,7 +142,6 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
                     "reader_id": user_id
                 })
 
-            # --- 4. WEBRTC CALL SIGNALING ---
             elif mtype in ("call:offer", "call:answer", "call:ice-candidate", "call:end"):
                 await dm_hub.send_to_user(target_id, {
                     **msg,
@@ -151,4 +149,7 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
                 })
 
     except WebSocketDisconnect:
+        dm_hub.disconnect(user_id, ws)
+    except Exception as e:
+        print(f"[WS ERROR] {e}")
         dm_hub.disconnect(user_id, ws)
