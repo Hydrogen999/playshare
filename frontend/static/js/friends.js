@@ -62,7 +62,7 @@ function connectDMSocket() {
     } 
     else if (msg.type === "dm:seen") {
       if (activeChatUserId === msg.reader_id) {
-        document.querySelectorAll(".msg-status.mine").forEach(el => { el.textContent = "✓✓"; el.classList.add("text-cyber-cyan"); });
+        document.querySelectorAll(".msg-status.mine").forEach(el => { el.textContent = "✓✓"; el.classList.add("text-cyan-400"); });
       }
     }
     else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer);
@@ -91,14 +91,14 @@ function timeAgo(iso) {
   return `${Math.floor(diff / 86400)}d`;
 }
 function escapeHTML(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
-function crownMark(isPremium) { return isPremium ? ' <span class="text-amber-400 text-xs shadow-[0_0_10px_#fbbf24]">👑</span>' : ""; }
+function crownMark(isPremium) { return isPremium ? ' <span class="text-amber-400 text-xs">👑</span>' : ""; }
 
 function openChatPanel() { document.body.classList.add("chat-open"); }
 function closeChatPanel() {
   document.body.classList.remove("chat-open");
   activeChatUserId = null;
   $("chatMessages").innerHTML = "";
-  $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400 font-medium">Select a conversation to begin transmission</div>`;
+  $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400">Select a conversation</div>`;
   $("chatForm").classList.add("hidden");
   renderList();
 }
@@ -107,9 +107,7 @@ $("mobileBack").addEventListener("click", closeChatPanel);
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     activeTab = btn.dataset.tab;
-    document.querySelectorAll(".tab-btn").forEach((b) => { 
-        b.className = b.dataset.tab === activeTab ? "tab-btn flex-1 py-4 text-cyber-cyan border-b-2 border-cyber-cyan bg-cyber-cyan/5 transition" : "tab-btn flex-1 py-4 text-slate-500 hover:text-slate-300 transition"; 
-    });
+    document.querySelectorAll(".tab-btn").forEach((b) => { b.className = b.dataset.tab === activeTab ? "tab-btn flex-1 py-3 text-brand-400 border-b-2 border-brand-500" : "tab-btn flex-1 py-3 text-slate-400 hover:text-slate-200"; });
     renderList();
   });
 });
@@ -129,14 +127,14 @@ function renderList() {
       const rel = u.relationship;
       let action = "";
       if (rel === "self") action = `<span class="text-xs text-slate-500">You</span>`;
-      else if (rel === "friends") action = `<button data-act="chat" data-id="${u.id}" data-username="${escapeHTML(u.username)}" data-avatar="${u.avatar_id}" data-premium="${u.is_premium ? '1' : '0'}" class="text-xs px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 shadow-lg shadow-brand-500/20">Message</button>`;
+      else if (rel === "friends") action = `<button data-act="chat" data-id="${u.id}" data-username="${escapeHTML(u.username)}" data-avatar="${u.avatar_id}" data-premium="${u.is_premium ? '1' : '0'}" class="text-xs px-2.5 py-1.5 rounded bg-brand-600 hover:bg-brand-700">Message</button>`;
       else if (rel === "pending_out") action = `<span class="text-xs text-amber-400">Sent</span>`;
-      else if (rel === "pending_in") action = `<button data-act="accept" data-id="${u.id}" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-500/20">Accept</button>`;
-      else action = `<button data-act="add" data-id="${u.id}" class="text-xs px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 shadow-lg shadow-brand-500/20">+ Add</button>`;
+      else if (rel === "pending_in") action = `<button data-act="accept" data-id="${u.id}" class="text-xs px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700">Accept</button>`;
+      else action = `<button data-act="add" data-id="${u.id}" class="text-xs px-2.5 py-1.5 rounded bg-brand-600 hover:bg-brand-700">+ Add</button>`;
       return `
-        <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/40 border-b border-slate-800/50 transition cursor-pointer">
+        <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50">
           <div class="flex-shrink-0">${avatarHTML(u.avatar_id, "sm", u.frame_color, u.is_premium)}</div>
-          <div class="flex-1 min-w-0"><div class="text-sm font-bold text-slate-200 truncate">${escapeHTML(u.username)}${crownMark(u.is_premium)}</div><div class="text-xs text-slate-500">Level ${u.level}</div></div>
+          <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate">${escapeHTML(u.username)}${crownMark(u.is_premium)}</div><div class="text-xs text-slate-500">Level ${u.level}</div></div>
           ${action}
         </div>`;
     }).join("");
@@ -144,46 +142,46 @@ function renderList() {
   }
 
   if (activeTab === "friends") {
-    if (friends.length === 0) { list.innerHTML = `<div class="p-8 text-center text-slate-500 text-sm font-medium">No friends in the network yet.</div>`; return; }
+    if (friends.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No friends yet.</div>`; return; }
     list.innerHTML = friends.map((f) => `
-      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/40 border-b border-slate-800/50 transition">
+      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50">
         <div class="flex-shrink-0 cursor-pointer" data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}">${avatarHTML(f.avatar_id, "sm", f.frame_color, f.is_premium)}</div>
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-bold text-slate-200 truncate flex items-center gap-1">${escapeHTML(f.username)}${crownMark(f.is_premium)} ${f.streak_count > 0 ? `<span class="text-orange-500 font-bold text-[10px]">🔥 ${f.streak_count}</span>` : ""}</div>
+          <div class="text-sm font-semibold truncate flex items-center gap-1">${escapeHTML(f.username)}${crownMark(f.is_premium)} ${f.streak_count > 0 ? `<span class="text-orange-500 font-bold text-[10px]">🔥 ${f.streak_count}</span>` : ""}</div>
           <div class="text-xs text-slate-500">Level ${f.level}</div>
         </div>
-        <button data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 hover:bg-brand-600 hover:border-brand-500 text-white font-bold transition shadow-lg">Chat</button>
+        <button data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}" class="text-xs px-2 py-1.5 rounded bg-brand-600 hover:bg-brand-700 text-white font-bold transition">Chat</button>
       </div>`).join("");
     wireFriendRows(); return;
   }
 
   if (activeTab === "requests") {
-    if (requests.length === 0) { list.innerHTML = `<div class="p-8 text-center text-slate-500 text-sm font-medium">No incoming transmission requests.</div>`; return; }
+    if (requests.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No pending requests.</div>`; return; }
     list.innerHTML = requests.map((r) => `
       <div class="flex items-center gap-3 px-4 py-3 border-b border-slate-800/50">
         <div class="flex-shrink-0">${avatarHTML(r.avatar_id, "sm", r.frame_color, r.is_premium)}</div>
-        <div class="flex-1 min-w-0"><div class="text-sm font-bold text-slate-200 truncate">${escapeHTML(r.username)}${crownMark(r.is_premium)}</div><div class="text-xs text-slate-500">Level ${r.level}</div></div>
+        <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate">${escapeHTML(r.username)}${crownMark(r.is_premium)}</div><div class="text-xs text-slate-500">Level ${r.level}</div></div>
         <div class="flex gap-1">
-          <button data-act="accept" data-id="${r.user_id}" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-500/20">✓</button>
-          <button data-act="decline" data-id="${r.user_id}" class="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600">✕</button>
+          <button data-act="accept" data-id="${r.user_id}" class="text-xs px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700">✓</button>
+          <button data-act="decline" data-id="${r.user_id}" class="text-xs px-2.5 py-1.5 rounded bg-slate-700 hover:bg-slate-600">✕</button>
         </div>
       </div>`).join("");
     wireRowButtons(); return;
   }
 
   if (activeTab === "chats") {
-    if (conversations.length === 0) { list.innerHTML = `<div class="p-8 text-center text-slate-500 text-sm font-medium">No active comms channels.</div>`; return; }
+    if (conversations.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No conversations yet.</div>`; return; }
     list.innerHTML = conversations.map((c) => `
-      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/40 border-b border-slate-800/50 cursor-pointer transition" data-chat="${c.user_id}" data-username="${escapeHTML(c.username)}" data-avatar="${c.avatar_id}" data-premium="${c.is_premium ? '1' : '0'}">
+      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 cursor-pointer" data-chat="${c.user_id}" data-username="${escapeHTML(c.username)}" data-avatar="${c.avatar_id}" data-premium="${c.is_premium ? '1' : '0'}">
         <div class="flex-shrink-0">${avatarHTML(c.avatar_id, "sm", c.frame_color, c.is_premium)}</div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between">
-            <div class="text-sm font-bold text-slate-200 truncate flex items-center gap-1">${escapeHTML(c.username)}${crownMark(c.is_premium)} ${c.streak > 0 ? `<span class="text-orange-500 font-bold text-[10px]">🔥 ${c.streak}</span>` : ""}</div>
+            <div class="text-sm font-semibold truncate flex items-center gap-1">${escapeHTML(c.username)}${crownMark(c.is_premium)} ${c.streak > 0 ? `<span class="text-orange-500 font-bold text-[10px]">🔥 ${c.streak}</span>` : ""}</div>
             <div class="text-[10px] text-slate-500">${timeAgo(c.last_at)}</div>
           </div>
           <div class="flex items-center justify-between mt-0.5">
-            <div class="text-xs text-slate-400 truncate">${escapeHTML(c.last_message)}</div>
-            ${c.unread_count > 0 ? `<span class="ml-2 px-2 py-0.5 rounded-full bg-cyber-pink text-white text-[10px] font-bold shadow-[0_0_10px_#ec4899]">${c.unread_count}</span>` : ""}
+            <div class="text-xs text-slate-500 truncate">${escapeHTML(c.last_message)}</div>
+            ${c.unread_count > 0 ? `<span class="ml-2 px-1.5 py-0.5 rounded bg-red-500 text-white text-[10px] font-bold">${c.unread_count}</span>` : ""}
           </div>
         </div>
       </div>`).join("");
@@ -228,14 +226,14 @@ async function openChat(userId, username, avatarId, isPremium) {
       <div class="flex items-center gap-3">
         ${avatarHTML(avatarId, "sm", null, isPremium)}
         <div>
-          <div class="text-sm font-bold text-white flex items-center gap-1">${escapeHTML(username)}${crownMark(isPremium)}</div>
-          <div id="typingIndicator" class="text-[10px] text-cyber-cyan font-bold hidden"></div>
+          <div class="text-sm font-bold text-slate-100 flex items-center gap-1">${escapeHTML(username)}${crownMark(isPremium)}</div>
+          <div id="typingIndicator" class="text-[10px] text-brand-400 hidden"></div>
         </div>
       </div>
-      <div class="flex items-center gap-2">
-        <button id="startAudioCallBtn" class="p-2.5 bg-slate-800/80 rounded-full text-slate-300 hover:text-white transition pulse-glow" title="Audio Call">📞</button>
-        <button id="startVideoCallBtn" class="p-2.5 bg-slate-800/80 rounded-full text-slate-300 hover:text-white transition pulse-glow" title="Video Call">📹</button>
-        <button id="inviteGameBtn" class="p-2.5 bg-slate-800/80 rounded-full text-slate-300 hover:text-white transition pulse-glow" title="Challenge">⚔️</button>
+      <div class="flex items-center gap-1">
+        <button id="startAudioCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Audio Call">📞</button>
+        <button id="startVideoCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Video Call">📹</button>
+        <button id="inviteGameBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Challenge">⚔️</button>
       </div>
     </div>`;
 
@@ -265,30 +263,31 @@ function addMessageToUI(m) {
   const mine = m.sender_id === myId;
 
   const wrap = document.createElement("div");
-  wrap.className = mine ? "flex flex-col items-end mb-3 chat-bubble" : "flex flex-col items-start mb-3 chat-bubble";
+  wrap.className = mine ? "flex flex-col items-end mb-2" : "flex flex-col items-start mb-2";
   
-  let replyHtml = m.reply_to_status_id ? `<div class="text-[10px] text-cyber-cyan mb-1 px-2 border-l-2 border-cyber-cyan">Replied to a status</div>` : "";
+  let replyHtml = m.reply_to_status_id ? `<div class="text-[10px] text-brand-400 mb-1 px-2 border-l-2 border-brand-500">Replied to a status</div>` : "";
 
   let contentHtml = "";
   if (m.content && (m.content.includes("Missed audio call") || m.content.includes("Missed video call"))) {
-      contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2 bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-xl"><span>📞</span> ${escapeHTML(m.content)}</div>`;
+      // Missed Call UI
+      contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
   } else if (m.content) {
-      contentHtml = `<div class="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm break-words shadow-lg ${mine ? "bg-gradient-to-br from-brand-600 to-brand-700 text-white rounded-tr-sm" : "bg-slate-800/90 border border-slate-700 text-slate-100 rounded-tl-sm"}">${escapeHTML(m.content)}</div>`;
+      contentHtml = `<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>`;
   }
 
   let mediaHtml = "";
   if (m.media_url) {
       if (m.media_url.match(/\.(mp4|webm|ogg|mov|mp3|wav|m4a)$/i)) {
-          mediaHtml = `<div class="mt-2 bg-slate-900/80 p-2 rounded-xl border border-slate-700"><audio src="${m.media_url}" controls class="w-48 h-10"></audio></div>`;
+          mediaHtml = `<audio src="${m.media_url}" controls class="mt-2 w-48"></audio>`;
       } else {
-          mediaHtml = `<img src="${m.media_url}" class="max-w-[200px] rounded-xl mt-1 border border-slate-700 shadow-lg" />`;
+          mediaHtml = `<img src="${m.media_url}" class="max-w-[200px] rounded-xl mt-1 border border-slate-700" />`;
       }
   }
 
-  let statusHtml = mine ? `<div class="text-[10px] text-slate-500 mt-1 mr-1"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> · ${timeAgo(m.created_at)}</div>` : `<div class="text-[10px] text-slate-500 mt-1 ml-1">${timeAgo(m.created_at)}</div>`;
+  let statusHtml = mine ? `<div class="text-[10px] text-slate-500 mt-0.5"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> · ${timeAgo(m.created_at)}</div>` : `<div class="text-[10px] text-slate-500 mt-0.5">${timeAgo(m.created_at)}</div>`;
   
   if (m.read && mine) {
-    setTimeout(() => { const s = wrap.querySelector('.msg-status'); if (s) s.classList.add("text-cyber-cyan", "drop-shadow-[0_0_5px_#06b6d4]"); }, 10);
+    setTimeout(() => { const s = wrap.querySelector('.msg-status'); if (s) s.classList.add("text-cyan-400"); }, 10);
   }
 
   wrap.innerHTML = `${replyHtml}${contentHtml}${mediaHtml}${statusHtml}`;
@@ -319,48 +318,83 @@ $("chatForm").addEventListener("submit", async (e) => {
   dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: false }));
 });
 
-// --- UPLOAD IMAGE (Via WebSocket Media URL) ---
+// --- UPLOAD IMAGE (HTTP Upload -> WebSocket URL) ---
 $("chatImageInput").addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file || !activeChatUserId) return;
     
-    // In a real app, you upload to S3/Cloudinary here. For now, we simulate a URL
-    // We'll base64 encode it for local testing.
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-        const base64Url = ev.target.result;
-        dmSocket.send(JSON.stringify({ type: "dm:send", target_id: activeChatUserId, content: "", media_url: base64Url }));
-    };
-    reader.readAsDataURL(file);
-    e.target.value = ""; // Reset
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+        // 1. Upload to backend
+        const token = localStorage.getItem("ps_token");
+        const res = await fetch("/api/v1/dm/upload", {
+            method: "POST",
+            headers: { "Authorization": "Bearer " + token },
+            body: formData
+        });
+        
+        if (!res.ok) throw new Error("Upload failed");
+        const data = await res.json();
+        
+        // 2. Send the URL via WebSocket
+        dmSocket.send(JSON.stringify({ 
+            type: "dm:send", 
+            target_id: activeChatUserId, 
+            content: "", 
+            media_url: data.url 
+        }));
+    } catch (err) {
+        alert("Could not upload image.");
+    }
+    e.target.value = ""; 
 });
 
-// --- VOICE NOTE LOGIC ---
+// --- VOICE NOTE LOGIC (HTTP Upload -> WebSocket URL) ---
 $("voiceNoteBtn").addEventListener("click", async () => {
     if (!activeChatUserId) return;
 
     if (isRecording) {
-        // Stop recording
         mediaRecorder.stop();
         isRecording = false;
         $("micIcon").textContent = "🎤";
         $("micIcon").classList.remove("text-red-500", "animate-pulse");
     } else {
-        // Start recording
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
 
             mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-            mediaRecorder.onstop = () => {
+            mediaRecorder.onstop = async () => {
                 const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const base64Audio = ev.target.result;
-                    dmSocket.send(JSON.stringify({ type: "dm:send", target_id: activeChatUserId, content: "", media_url: base64Audio }));
-                };
-                reader.readAsDataURL(audioBlob);
+                const file = new File([audioBlob], "voice_note.webm", { type: "audio/webm" });
+                
+                const formData = new FormData();
+                formData.append("file", file);
+
+                try {
+                    // 1. Upload to backend
+                    const token = localStorage.getItem("ps_token");
+                    const res = await fetch("/api/v1/dm/upload", {
+                        method: "POST",
+                        headers: { "Authorization": "Bearer " + token },
+                        body: formData
+                    });
+                    if (!res.ok) throw new Error("Upload failed");
+                    const data = await res.json();
+
+                    // 2. Send URL via WebSocket
+                    dmSocket.send(JSON.stringify({ 
+                        type: "dm:send", 
+                        target_id: activeChatUserId, 
+                        content: "", 
+                        media_url: data.url 
+                    }));
+                } catch (err) {
+                    alert("Could not upload voice note.");
+                }
             };
 
             mediaRecorder.start();
@@ -368,7 +402,7 @@ $("voiceNoteBtn").addEventListener("click", async () => {
             $("micIcon").textContent = "⏹️";
             $("micIcon").classList.add("text-red-500", "animate-pulse");
         } catch (err) {
-            alert("Microphone access denied.");
+            alert("Microphone access denied. Check browser permissions.");
         }
     }
 });
@@ -386,8 +420,8 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     <div class="relative z-10 w-full p-6 flex justify-between items-center">
       <button class="opacity-0 w-12 h-12"></button>
       <div class="text-center">
-        <div class="text-white font-bold text-2xl font-display flex items-center justify-center gap-2">${targetName} ${isPremium ? "👑" : ""}</div>
-        <div id="callTimer" class="text-cyber-cyan text-sm mt-1 font-mono tracking-widest">CONNECTING...</div>
+        <div class="text-white font-bold text-2xl flex items-center justify-center gap-2">${targetName} ${isPremium ? "👑" : ""}</div>
+        <div id="callTimer" class="text-slate-400 text-sm mt-1">Connecting...</div>
       </div>
       <button class="opacity-0 w-12 h-12"></button>
     </div>
@@ -397,11 +431,11 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     overlay.innerHTML = `
       <video id="remoteVideo" autoplay playsinline class="absolute inset-0 w-full h-full object-cover z-0"></video>
       ${header}
-      <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-cyber-cyan shadow-[0_0_20px_rgba(6,182,212,0.4)] z-20"></video>
-      <div class="relative z-10 mb-8 bg-[#1f2c33]/90 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-6 shadow-2xl border border-slate-700">
-        <button id="btnVideo" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl hover:bg-slate-600 transition">📹</button>
-        <button id="btnMute" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl hover:bg-slate-600 transition">🎤</button>
-        <button id="btnEnd" class="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center text-white text-2xl shadow-lg shadow-red-500/50 hover:bg-red-600 transition">📞</button>
+      <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-slate-700 shadow-2xl z-20"></video>
+      <div class="relative z-10 mb-8 bg-[#1f2c33]/90 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-6 shadow-2xl">
+        <button id="btnVideo" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button>
+        <button id="btnMute" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button>
+        <button id="btnEnd" class="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center text-white text-2xl shadow-lg shadow-red-500/50">📞</button>
       </div>
     `;
   } else {
@@ -410,9 +444,9 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
       <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
       ${header}
       <div class="relative z-10 flex-1 flex flex-col items-center justify-center">
-        <div class="w-40 h-40 rounded-full border-4 border-cyber-cyan overflow-hidden shadow-[0_0_50px_rgba(6,182,212,0.3)]">${avatarHTML(targetAvatar, "xl")}</div>
+        <div class="w-40 h-40 rounded-full border-4 border-slate-700 overflow-hidden shadow-[0_0_50px_rgba(255,255,255,0.1)]">${avatarHTML(targetAvatar, "xl")}</div>
       </div>
-      <div class="relative z-10 mb-12 bg-[#1f2c33]/90 backdrop-blur-md w-11/12 max-w-sm px-6 py-6 rounded-3xl grid grid-cols-3 gap-6 shadow-2xl border border-slate-700">
+      <div class="relative z-10 mb-12 bg-[#1f2c33]/90 backdrop-blur-md w-11/12 max-w-sm px-6 py-6 rounded-3xl grid grid-cols-3 gap-6 shadow-2xl">
         <div class="flex flex-col items-center gap-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🔊</button><span class="text-xs text-slate-300">Speaker</span></div>
         <div class="flex flex-col items-center gap-2"><button id="btnSwitchToVideo" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button><span class="text-xs text-slate-300">Video</span></div>
         <div class="flex flex-col items-center gap-2"><button id="btnMute" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button><span class="text-xs text-slate-300">Mute</span></div>
@@ -444,21 +478,26 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
           try {
               const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
               const videoTrack = videoStream.getVideoTracks()[0];
+              
               if (pc) {
                   const senders = pc.getSenders();
                   const videoSender = senders.find(s => s.track && s.track.kind === 'video');
                   if (videoSender) videoSender.replaceTrack(videoTrack);
                   else pc.addTrack(videoTrack, videoStream);
               }
+              
               if (localStream) localStream.addTrack(videoTrack);
               
+              // Rebuild UI for video
               const name = targetName, av = targetAvatar, pr = isPremium;
               $("videoCallOverlay").remove();
               createVideoOverlay(true, name, av, pr);
               $("remoteVideo").srcObject = remoteStream;
               $("localVideo").srcObject = localStream;
-              startCallTimer();
-          } catch (e) { alert("Camera access denied."); }
+              startCallTimer(); // Resume timer
+          } catch (e) {
+              alert("Camera access denied.");
+          }
       };
   }
 }
@@ -494,8 +533,10 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
     pc.ontrack = (event) => {
       if (!remoteStream) remoteStream = new MediaStream();
       remoteStream.addTrack(event.track);
+      
       if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
       if ($("remoteAudio")) $("remoteAudio").srcObject = remoteStream;
+
       stopRingtone();
       startCallTimer();
     };
@@ -522,7 +563,12 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
     }, 30000);
 
   } catch (err) {
-    alert("Could not access camera/microphone.");
+    console.error("WEBCAM ERROR:", err); 
+    if (err.name === 'NotAllowedError') {
+        alert("You blocked the camera/microphone. Click the Lock icon in the URL bar and allow them.");
+    } else {
+        alert("Could not access camera/microphone: " + err.message);
+    }
     endCall();
   }
 }
@@ -535,18 +581,18 @@ function showIncomingCall(senderId, offer) {
   
   modal.innerHTML = `
     <div class="text-center mt-12 w-full">
-      <div class="text-cyber-cyan text-sm font-bold tracking-widest uppercase mb-2 animate-pulse">Incoming ${offer.is_video ? 'Video' : 'Audio'} Call</div>
-      <div class="w-40 h-40 mx-auto rounded-full border-4 border-cyber-cyan overflow-hidden shadow-[0_0_30px_rgba(6,182,212,0.5)] animate-bounce">${avatarHTML(caller.avatar_id, "xl", null, caller.is_premium)}</div>
-      <div class="text-white font-black text-3xl mt-6 font-display tracking-wider">${caller.username}</div>
+      <div class="text-slate-400 text-sm mb-2">Incoming ${offer.is_video ? 'Video' : 'Audio'} Call...</div>
+      <div class="w-40 h-40 mx-auto rounded-full border-4 border-slate-700 overflow-hidden shadow-2xl animate-pulse">${avatarHTML(caller.avatar_id, "xl", null, caller.is_premium)}</div>
+      <div class="text-white font-bold text-3xl mt-6">${caller.username}</div>
     </div>
     <div class="w-full max-w-sm flex justify-between mb-12">
       <div class="flex flex-col items-center gap-2">
-        <button id="rejectCallBtn" class="bg-red-500 w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-[0_0_20px_#ef4444] hover:scale-105 transition">✖</button>
-        <span class="text-xs text-slate-400 font-bold uppercase">Decline</span>
+        <button id="rejectCallBtn" class="bg-red-500 w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-xl hover:scale-105 transition">✖</button>
+        <span class="text-xs text-slate-400 font-bold">Decline</span>
       </div>
       <div class="flex flex-col items-center gap-2">
-        <button id="acceptCallBtn" class="bg-emerald-500 w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-[0_0_20px_#10b981] animate-pulse hover:scale-105 transition">📞</button>
-        <span class="text-xs text-slate-400 font-bold uppercase">Accept</span>
+        <button id="acceptCallBtn" class="bg-emerald-500 w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-xl animate-bounce hover:scale-105 transition">📞</button>
+        <span class="text-xs text-slate-400 font-bold">Accept</span>
       </div>
     </div>
   `;
@@ -595,7 +641,7 @@ function showIncomingCall(senderId, offer) {
         dmSocket.send(JSON.stringify({ type: "call:answer", target_id: senderId, answer: answer }));
       }
     } catch (err) {
-       alert("Camera/Microphone access denied.");
+       alert("Camera/Microphone access denied. Check browser permissions.");
        endCall();
     }
   };
@@ -649,11 +695,11 @@ async function renderStories() {
   let bar = $("storyBar");
   if (!bar) {
     const listPanel = $("listPanel");
-    const searchDiv = listPanel.querySelector(".p-4.border-b");
+    const searchDiv = listPanel.querySelector(".p-3.border-b");
     if (searchDiv) {
       bar = document.createElement("div");
       bar.id = "storyBar";
-      bar.className = "flex gap-3 overflow-x-auto p-4 border-b border-brand-500/20 scrollbar-hide";
+      bar.className = "flex gap-3 overflow-x-auto p-3 border-b border-slate-800 scrollbar-hide";
       searchDiv.after(bar);
     }
   }
@@ -669,18 +715,18 @@ async function renderStories() {
 
   let html = `
     <div class="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer" id="addStatusBtn">
-      <div class="w-14 h-14 rounded-full border-2 border-dashed border-slate-600 bg-slate-800/50 flex items-center justify-center text-xl text-slate-400 hover:border-cyber-cyan hover:text-cyber-cyan transition">+</div>
-      <div class="text-[10px] text-slate-400 font-bold mt-1">Add</div>
+      <div class="w-14 h-14 rounded-full border-2 border-slate-700 bg-slate-800 flex items-center justify-center text-xl text-slate-400 hover:border-brand-500 transition">+</div>
+      <div class="text-[10px] text-slate-400 font-bold">Add</div>
     </div>
   `;
 
   Object.values(grouped).forEach(group => {
     const isSelf = group.relation === "self";
-    const ringClass = isSelf ? "border-slate-500" : "border-cyber-pink shadow-[0_0_10px_#ec4899]";
+    const ringClass = isSelf ? "border-slate-500" : "border-brand-500";
     html += `
       <div class="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer view-status-btn" data-group='${JSON.stringify(group)}'>
         <div class="w-14 h-14 rounded-full border-2 ${ringClass} p-0.5">${avatarHTML(group.avatar_id, "md")}</div>
-        <div class="text-[10px] text-slate-300 font-bold truncate w-14 text-center mt-1">${isSelf ? "You" : escapeHTML(group.username)}</div>
+        <div class="text-[10px] text-slate-300 font-bold truncate w-14 text-center">${isSelf ? "You" : escapeHTML(group.username)}</div>
       </div>
     `;
   });
@@ -712,9 +758,9 @@ function showStatusSlideshow(items) {
     let viewCountHtml = status.relation === "self" && status.viewers ? `<div class="text-xs text-slate-300 mt-1">👁️ ${status.viewers.length} views</div>` : "";
 
     overlay.innerHTML = `
-      <div class="w-full max-w-sm h-full sm:h-[80vh] sm:rounded-2xl bg-slate-900 relative overflow-hidden flex flex-col border border-brand-500/30 shadow-[0_0_50px_rgba(124,58,237,0.3)]">
+      <div class="w-full max-w-sm h-full sm:h-[80vh] sm:rounded-2xl bg-slate-900 relative overflow-hidden flex flex-col">
         <div class="absolute top-4 left-4 right-4 flex gap-1 z-20">
-          ${items.map((_, i) => `<div class="h-1 flex-1 bg-white/30 rounded-full overflow-hidden"><div class="h-full bg-cyber-cyan transition-all duration-3000 ${i === currentIndex ? 'w-full' : i < currentIndex ? 'w-full' : 'w-0'}"></div></div>`).join("")}
+          ${items.map((_, i) => `<div class="h-1 flex-1 bg-white/30 rounded-full overflow-hidden"><div class="h-full bg-white transition-all duration-3000 ${i === currentIndex ? 'w-full' : i < currentIndex ? 'w-full' : 'w-0'}"></div></div>`).join("")}
         </div>
         <div class="p-4 pt-10 flex items-center gap-2 z-20 bg-gradient-to-b from-black/80 to-transparent absolute top-0 left-0 right-0">
           ${avatarHTML(status.avatar_id, "sm")}
@@ -732,7 +778,7 @@ function showStatusSlideshow(items) {
 
         ${!status.relation === "self" ? "" : `
         <div class="absolute bottom-4 left-4 right-4 z-20">
-            <input type="text" id="statusReplyInput" placeholder="Reply to story..." class="w-full bg-white/10 backdrop-blur-md border border-cyber-cyan/50 text-white rounded-full px-4 py-3 text-sm focus:outline-none focus:border-cyber-cyan transition" />
+            <input type="text" id="statusReplyInput" placeholder="Reply to story..." class="w-full bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-full px-4 py-2 text-sm focus:outline-none" />
         </div>
         `}
       </div>
@@ -774,18 +820,18 @@ function showStatusSlideshow(items) {
 
 function showCreateStatusModal() {
   const overlay = document.createElement("div");
-  overlay.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 backdrop-blur-sm";
+  overlay.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
   overlay.innerHTML = `
-    <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-6 border border-brand-500/30 shadow-[0_0_30px_rgba(124,58,237,0.2)]">
-      <h3 class="text-white font-bold text-lg mb-4 font-display">Create Status</h3>
-      <textarea id="statusText" rows="3" placeholder="What's on your mind?" class="w-full bg-slate-800 text-white rounded-lg p-3 text-sm focus:outline-none border border-slate-700 mb-3 focus:border-cyber-cyan transition"></textarea>
-      <label class="flex items-center gap-2 bg-slate-800 text-slate-300 border border-slate-700 rounded-lg p-3 cursor-pointer hover:bg-slate-700 mb-6 transition">
+    <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl">
+      <h3 class="text-white font-bold text-lg mb-4">Create Status</h3>
+      <textarea id="statusText" rows="3" placeholder="What's on your mind?" class="w-full bg-slate-800 text-white rounded-lg p-3 text-sm focus:outline-none border border-slate-700 mb-3"></textarea>
+      <label class="flex items-center gap-2 bg-slate-800 text-slate-300 border border-slate-700 rounded-lg p-3 cursor-pointer hover:bg-slate-700 mb-4">
         <span class="text-xl">📸</span><span class="text-sm font-bold" id="fileLabel">Add Image/Video</span>
         <input type="file" id="statusMedia" accept="image/*,video/*" class="hidden" />
       </label>
       <div class="flex gap-2">
-        <button id="cancelStatusBtn" class="flex-1 py-3 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm hover:bg-slate-700 transition">Cancel</button>
-        <button id="postStatusBtn" class="flex-1 py-3 rounded-lg bg-gradient-to-r from-brand-600 to-cyber-pink text-white font-bold text-sm shadow-lg hover:opacity-90 transition">Post</button>
+        <button id="cancelStatusBtn" class="flex-1 py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
+        <button id="postStatusBtn" class="flex-1 py-2.5 rounded-lg bg-brand-600 text-white font-bold text-sm">Post</button>
       </div>
     </div>
   `;
@@ -795,7 +841,7 @@ function showCreateStatusModal() {
   fileInput.addEventListener("change", () => {
     if (fileInput.files.length > 0) {
       overlay.querySelector("#fileLabel").textContent = fileInput.files[0].name;
-      overlay.querySelector("#fileLabel").classList.add("text-cyber-cyan");
+      overlay.querySelector("#fileLabel").classList.add("text-brand-400");
     }
   });
 
