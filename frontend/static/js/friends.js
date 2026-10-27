@@ -9,13 +9,18 @@ let pollTimer = null;
 let dmSocket = null;
 let reconnectTimeout = null;
 
-// --- WebRTC Variables ---
+// --- WebRTC & Media Variables ---
 let pc = null;
 let localStream = null;
 let remoteStream = null;
 let currentCallTargetId = null;
-let callTimeout = null; 
+let isVideoCall = false;
+let isMuted = false;
 const STUN_SERVER = "stun:stun.l.google.com:19302";
+
+// --- Voice Note Variables ---
+let mediaRecorder = null;
+let audioChunks = [];
 
 // --- Typing Timeout ---
 let typingTimeout = null;
@@ -25,70 +30,51 @@ let typingTimeout = null;
 // ---------------------------------------------------------
 function connectDMSocket() {
   if (reconnectTimeout) clearTimeout(reconnectTimeout);
-
   const token = api.getToken();
   if (!token) return;
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const url = `${proto}//${location.host}/ws/dm?token=${encodeURIComponent(token)}`;
 
-  if (dmSocket) {
-    dmSocket.onclose = null;
-    dmSocket.close();
-  }
-
+  if (dmSocket) { dmSocket.onclose = null; dmSocket.close(); }
   dmSocket = new WebSocket(url);
 
   dmSocket.addEventListener("open", () => {
-    console.log("[DM WS] Connected");
-    if (activeChatUserId) {
-      dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: activeChatUserId }));
-    }
+    if (activeChatUserId) dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: activeChatUserId }));
   });
 
   dmSocket.addEventListener("message", (ev) => {
-    let msg;
-    try { msg = JSON.parse(ev.data); } catch { return; }
+    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
 
     if (msg.type === "dm:new") {
       if (activeChatUserId === msg.sender_id || activeChatUserId === msg.recipient_id) {
         addMessageToUI(msg);
-        if (msg.recipient_id === myId) {
-          dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: msg.sender_id }));
-        }
+        if (msg.recipient_id === myId) dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: msg.sender_id }));
       }
       refreshAll();
     } 
     else if (msg.type === "dm:typing") {
       if (activeChatUserId === msg.sender_id) {
-        const indicator = $("typingIndicator");
-        if (indicator) {
-          indicator.textContent = msg.is_typing ? "typing..." : "";
-          indicator.classList.toggle("hidden", !msg.is_typing);
-        }
+        const ind = $("typingIndicator");
+        if (ind) { ind.textContent = msg.is_typing ? "typing..." : ""; ind.classList.toggle("hidden", !msg.is_typing); }
       }
     } 
     else if (msg.type === "dm:seen") {
       if (activeChatUserId === msg.reader_id) {
-        document.querySelectorAll(".msg-status.mine").forEach(el => {
-          el.textContent = "✓✓";
-          el.classList.add("text-cyan-400");
-        });
+        document.querySelectorAll(".msg-status.mine").forEach(el => { el.textContent = "✓✓"; el.classList.add("text-cyan-400"); });
       }
     }
     else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer);
-    else if (msg.type === "call:answer") { 
-        if (pc) {
-            clearTimeout(callTimeout);
-            pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
-        }
-    }
+    else if (msg.type === "call:answer") { if (pc) { clearTimeout(callTimeout); pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); } }
     else if (msg.type === "call:ice-candidate") { if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); }
     else if (msg.type === "call:end") endCall();
+    else if (msg.type === "call:reject") {
+        if (currentCallTargetId) alert("Call was declined.");
+        endCall();
+    }
   });
 
   dmSocket.addEventListener("close", () => {
-    console.log("[DM WS] Disconnected. Reconnecting...");
     dmSocket = null;
     reconnectTimeout = setTimeout(connectDMSocket, 3000);
   });
@@ -100,18 +86,10 @@ function connectDMSocket() {
 function timeAgo(iso) {
   if (!iso) return "";
   const diff = Math.max(0, Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return "now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  if (diff < 60) return "now"; if (diff < 3600) return `${Math.floor(diff / 60)}m`; if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
   return `${Math.floor(diff / 86400)}d`;
 }
-
-function escapeHTML(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[c]));
-}
-
+function escapeHTML(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function crownMark(isPremium) { return isPremium ? ' <span class="text-amber-400 text-xs">👑</span>' : ""; }
 
 function openChatPanel() { document.body.classList.add("chat-open"); }
@@ -123,15 +101,12 @@ function closeChatPanel() {
   $("chatForm").classList.add("hidden");
   renderList();
 }
-
 $("mobileBack").addEventListener("click", closeChatPanel);
 
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     activeTab = btn.dataset.tab;
-    document.querySelectorAll(".tab-btn").forEach((b) => {
-      b.className = b.dataset.tab === activeTab ? "tab-btn flex-1 py-3 text-brand-400 border-b-2 border-brand-500" : "tab-btn flex-1 py-3 text-slate-400 hover:text-slate-200";
-    });
+    document.querySelectorAll(".tab-btn").forEach((b) => { b.className = b.dataset.tab === activeTab ? "tab-btn flex-1 py-3 text-brand-400 border-b-2 border-brand-500" : "tab-btn flex-1 py-3 text-slate-400 hover:text-slate-200"; });
     renderList();
   });
 });
@@ -141,14 +116,11 @@ $("searchInput").addEventListener("input", (e) => {
   clearTimeout(searchTimeout);
   const q = e.target.value.trim();
   if (!q) { searchResults = []; renderList(); return; }
-  searchTimeout = setTimeout(async () => {
-    try { searchResults = await api.searchUsers(q); renderList(); } catch (err) { console.error(err); }
-  }, 300);
+  searchTimeout = setTimeout(async () => { try { searchResults = await api.searchUsers(q); renderList(); } catch (err) { console.error(err); } }, 300);
 });
 
 function renderList() {
   const list = $("listArea");
-
   if (searchResults.length > 0 && $("searchInput").value.trim()) {
     list.innerHTML = searchResults.map((u) => {
       const rel = u.relationship;
@@ -267,11 +239,9 @@ async function openChat(userId, username, avatarId, isPremium) {
   $("chatForm").classList.remove("hidden");
   await loadMessages();
 
-  if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-    dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: activeChatUserId }));
-  }
-
+  if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: activeChatUserId }));
   $("chatInput").focus();
+  
   $("startAudioCallBtn").onclick = () => initiateCall(userId, false, username, avatarId, isPremium);
   $("startVideoCallBtn").onclick = () => initiateCall(userId, true, username, avatarId, isPremium);
 }
@@ -282,9 +252,7 @@ async function loadMessages() {
     const msgs = await api.getConversation(activeChatUserId);
     const el = $("chatMessages");
     el.innerHTML = "";
-    for (const m of msgs) {
-      addMessageToUI(m);
-    }
+    for (const m of msgs) { addMessageToUI(m); }
     el.scrollTop = el.scrollHeight;
   } catch (err) { console.error(err); }
 }
@@ -296,20 +264,29 @@ function addMessageToUI(m) {
   const wrap = document.createElement("div");
   wrap.className = mine ? "flex flex-col items-end mb-2" : "flex flex-col items-start mb-2";
   
-  let replyHtml = "";
-  if (m.reply_to_status_id) {
-      replyHtml = `<div class="text-[10px] text-brand-400 mb-1 px-2 border-l-2 border-brand-500">Replied to a status</div>`;
+  let replyHtml = m.reply_to_status_id ? `<div class="text-[10px] text-brand-400 mb-1 px-2 border-l-2 border-brand-500">Replied to a status</div>` : "";
+
+  let contentHtml = "";
+  if (m.content && (m.content.includes("Missed audio call") || m.content.includes("Missed video call"))) {
+      // Missed Call UI
+      contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
+  } else if (m.content) {
+      contentHtml = `<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>`;
   }
 
-  let contentHtml = m.content ? `<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>` : "";
-  let mediaHtml = m.media_url ? `<img src="${m.media_url}" class="max-w-[200px] rounded-xl mt-1 border border-slate-700" />` : "";
+  let mediaHtml = "";
+  if (m.media_url) {
+      if (m.media_url.match(/\.(mp4|webm|ogg|mov|mp3|wav|m4a)$/i)) {
+          mediaHtml = `<audio src="${m.media_url}" controls class="mt-2 w-48"></audio>`;
+      } else {
+          mediaHtml = `<img src="${m.media_url}" class="max-w-[200px] rounded-xl mt-1 border border-slate-700" />`;
+      }
+  }
+
   let statusHtml = mine ? `<div class="text-[10px] text-slate-500 mt-0.5"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> · ${timeAgo(m.created_at)}</div>` : `<div class="text-[10px] text-slate-500 mt-0.5">${timeAgo(m.created_at)}</div>`;
   
   if (m.read && mine) {
-    setTimeout(() => {
-        const statusEl = wrap.querySelector('.msg-status');
-        if (statusEl) statusEl.classList.add("text-cyan-400");
-    }, 10);
+    setTimeout(() => { const s = wrap.querySelector('.msg-status'); if (s) s.classList.add("text-cyan-400"); }, 10);
   }
 
   wrap.innerHTML = `${replyHtml}${contentHtml}${mediaHtml}${statusHtml}`;
@@ -321,13 +298,13 @@ $("chatInput").addEventListener("input", () => {
   if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN || !activeChatUserId) return;
   dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: true }));
   clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-      dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: false }));
-    }
-  }, 2000);
+  typingTimeout = setTimeout(() => { if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: false })); }, 2000);
 });
 
+// --- CHAT FORM (Text, Image, Voice Note) ---
+// I've added the Mic button logic inside the form submit or a separate button.
+// Let's add a custom UI for uploads in the `chatForm` section.
+// In HTML, we will add the buttons, here we handle the submit.
 $("chatForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("chatInput").value.trim();
@@ -343,26 +320,33 @@ $("chatForm").addEventListener("submit", async (e) => {
   dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: false }));
 });
 
+// NOTE: We will handle image & voice uploads via separate functions triggered by new buttons.
+
 // ---------------------------------------------------------
-// 4. WEBRTC CALLING SYSTEM (THE FIX)
+// 4. WEBRTC CALLING SYSTEM
 // ---------------------------------------------------------
 function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
-  if ($("videoCallOverlay")) return;
+  if ($("videoCallOverlay")) $("videoCallOverlay").remove();
   const overlay = document.createElement("div");
   overlay.id = "videoCallOverlay";
-  overlay.className = "fixed inset-0 z-[999] bg-[#0b141a] flex flex-col items-center justify-between hidden";
+  overlay.className = "fixed inset-0 z-[999] bg-[#0b141a] flex flex-col items-center justify-between";
   
+  // Shared Header
+  const header = `
+    <div class="relative z-10 w-full p-6 flex justify-between items-center">
+      <button class="opacity-0 w-12 h-12"></button>
+      <div class="text-center">
+        <div class="text-white font-bold text-2xl flex items-center justify-center gap-2">${targetName} ${isPremium ? "👑" : ""}</div>
+        <div id="callTimer" class="text-slate-400 text-sm mt-1">Connecting...</div>
+      </div>
+      <button class="opacity-0 w-12 h-12"></button>
+    </div>
+  `;
+
   if (isVideo) {
     overlay.innerHTML = `
       <video id="remoteVideo" autoplay playsinline class="absolute inset-0 w-full h-full object-cover z-0"></video>
-      <div class="relative z-10 w-full p-6 flex justify-between items-center bg-gradient-to-b from-black/60 to-transparent">
-        <button class="opacity-0 w-12 h-12"></button>
-        <div class="text-center">
-          <div class="text-white font-bold text-lg">${targetName}</div>
-          <div id="callTimer" class="text-slate-300 text-sm">Connecting...</div>
-        </div>
-        <button class="opacity-0 w-12 h-12"></button>
-      </div>
+      ${header}
       <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-slate-700 shadow-2xl z-20"></video>
       <div class="relative z-10 mb-8 bg-[#1f2c33]/90 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-6 shadow-2xl">
         <button id="btnVideo" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button>
@@ -374,22 +358,13 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     overlay.innerHTML = `
       <audio id="remoteAudio" autoplay playsinline></audio>
       <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-      <div class="relative z-10 w-full p-6 flex justify-between items-center">
-        <button class="opacity-0 w-12 h-12"></button>
-        <div class="text-center">
-          <div class="text-white font-bold text-2xl flex items-center justify-center gap-2">${targetName} ${isPremium ? "👑" : ""}</div>
-          <div id="callTimer" class="text-slate-400 text-sm mt-1">Connecting...</div>
-        </div>
-        <button class="opacity-0 w-12 h-12"></button>
-      </div>
+      ${header}
       <div class="relative z-10 flex-1 flex flex-col items-center justify-center">
-        <div class="w-40 h-40 rounded-full border-4 border-slate-700 overflow-hidden shadow-[0_0_50px_rgba(255,255,255,0.1)]">
-            ${avatarHTML(targetAvatar, "xl")}
-        </div>
+        <div class="w-40 h-40 rounded-full border-4 border-slate-700 overflow-hidden shadow-[0_0_50px_rgba(255,255,255,0.1)]">${avatarHTML(targetAvatar, "xl")}</div>
       </div>
       <div class="relative z-10 mb-12 bg-[#1f2c33]/90 backdrop-blur-md w-11/12 max-w-sm px-6 py-6 rounded-3xl grid grid-cols-3 gap-6 shadow-2xl">
         <div class="flex flex-col items-center gap-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🔊</button><span class="text-xs text-slate-300">Speaker</span></div>
-        <div class="flex flex-col items-center gap-2"><button id="btnVideo" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button><span class="text-xs text-slate-300">Video</span></div>
+        <div class="flex flex-col items-center gap-2"><button id="btnSwitchToVideo" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button><span class="text-xs text-slate-300">Video</span></div>
         <div class="flex flex-col items-center gap-2"><button id="btnMute" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button><span class="text-xs text-slate-300">Mute</span></div>
         <div class="flex flex-col items-center gap-2 mt-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">•••</button><span class="text-xs text-slate-300">More</span></div>
         <div class="flex flex-col items-center gap-2 mt-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">↗</button><span class="text-xs text-slate-300">Share</span></div>
@@ -399,10 +374,9 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   }
   document.body.appendChild(overlay);
   
-  // --- FIX: WIRE UP THE BUTTONS ---
   $("btnEnd").onclick = endCall;
   
-  let isMuted = false;
+  isMuted = false;
   $("btnMute").onclick = () => {
     if (localStream) {
       const audioTrack = localStream.getAudioTracks()[0];
@@ -414,6 +388,35 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
       }
     }
   };
+
+  // Switch from Audio to Video
+  if (!isVideo) {
+      $("btnSwitchToVideo").onclick = async () => {
+          try {
+              const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+              const videoTrack = videoStream.getVideoTracks()[0];
+              
+              if (pc) {
+                  const senders = pc.getSenders();
+                  const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+                  if (videoSender) videoSender.replaceTrack(videoTrack);
+                  else pc.addTrack(videoTrack, videoStream);
+              }
+              
+              if (localStream) localStream.addTrack(videoTrack);
+              
+              // Rebuild UI for video
+              const name = targetName, av = targetAvatar, pr = isPremium;
+              $("videoCallOverlay").remove();
+              createVideoOverlay(true, name, av, pr);
+              $("remoteVideo").srcObject = remoteStream;
+              $("localVideo").srcObject = localStream;
+              startCallTimer(); // Resume timer
+          } catch (e) {
+              alert("Camera access denied.");
+          }
+      };
+  }
 }
 
 let callTimerInterval = null;
@@ -430,15 +433,12 @@ function startCallTimer() {
   }, 1000);
 }
 
-function stopCallTimer() {
-  clearInterval(callTimerInterval);
-}
+function stopCallTimer() { clearInterval(callTimerInterval); }
 
 async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremium) {
   try {
+    isVideoCall = isVideo;
     createVideoOverlay(isVideo, targetName, targetAvatar, isPremium);
-    $("videoCallOverlay").classList.remove("hidden");
-    $("videoCallOverlay").classList.add("flex");
     currentCallTargetId = targetId;
 
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
@@ -469,13 +469,14 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
     
     if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
         dmSocket.send(JSON.stringify({ type: "call:offer", target_id: targetId, offer: offer, is_video: isVideo }));
-    } else {
-        alert("Could not connect to chat server.");
-        endCall();
     }
     
     callTimeout = setTimeout(() => {
-      if (currentCallTargetId) { alert("User is offline."); endCall(); }
+      if (currentCallTargetId) { 
+          alert("User is offline or didn't answer.");
+          dmSocket.send(JSON.stringify({ type: "call:reject", target_id: targetId, call_type: isVideo ? 'video' : 'audio' })); 
+          endCall(); 
+      }
     }, 30000);
 
   } catch (err) {
@@ -484,14 +485,10 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
   }
 }
 
-// --- FULL SCREEN INCOMING CALL (FIXED) ---
 function showIncomingCall(senderId, offer) {
   playRingtone();
-
   const modal = document.createElement("div");
-  // Changed to fixed inset-0 for full screen coverage
   modal.className = "fixed inset-0 z-[9999] bg-[#0b141a] flex flex-col items-center justify-between p-8";
-  
   const caller = friends.find(f => f.id === senderId) || {username: "Unknown", avatar_id: "fox", is_premium: false};
   
   modal.innerHTML = `
@@ -500,7 +497,6 @@ function showIncomingCall(senderId, offer) {
       <div class="w-40 h-40 mx-auto rounded-full border-4 border-slate-700 overflow-hidden shadow-2xl animate-pulse">${avatarHTML(caller.avatar_id, "xl", null, caller.is_premium)}</div>
       <div class="text-white font-bold text-3xl mt-6">${caller.username}</div>
     </div>
-    
     <div class="w-full max-w-sm flex justify-between mb-12">
       <div class="flex flex-col items-center gap-2">
         <button id="rejectCallBtn" class="bg-red-500 w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-xl hover:scale-105 transition">✖</button>
@@ -516,7 +512,7 @@ function showIncomingCall(senderId, offer) {
 
   $("rejectCallBtn").onclick = () => {
     stopRingtone();
-    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:end", target_id: senderId }));
+    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:reject", target_id: senderId, call_type: offer.is_video ? 'video' : 'audio' }));
     modal.remove();
   };
 
@@ -524,10 +520,9 @@ function showIncomingCall(senderId, offer) {
     stopRingtone();
     modal.remove();
     currentCallTargetId = senderId;
+    isVideoCall = offer.is_video;
     
     createVideoOverlay(offer.is_video || false, caller.username, caller.avatar_id, caller.is_premium);
-    $("videoCallOverlay").classList.remove("hidden");
-    $("videoCallOverlay").classList.add("flex");
 
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: offer.is_video || false });
@@ -579,26 +574,21 @@ function playRingtone() {
       osc.frequency.exponentialRampToValueAtTime(880, ringtoneCtx.currentTime + 0.1); 
       gain.gain.setValueAtTime(0.5, ringtoneCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ringtoneCtx.currentTime + 0.5);
-      osc.connect(gain);
-      gain.connect(ringtoneCtx.destination);
-      osc.start();
-      osc.stop(ringtoneCtx.currentTime + 0.5);
+      osc.connect(gain); gain.connect(ringtoneCtx.destination);
+      osc.start(); osc.stop(ringtoneCtx.currentTime + 0.5);
     };
-    playBeep();
-    ringtoneInterval = setInterval(playBeep, 1500);
+    playBeep(); ringtoneInterval = setInterval(playBeep, 1500);
   } catch (e) { console.log("Audio error", e); }
 }
 
 function stopRingtone() {
   if (ringtoneInterval) clearInterval(ringtoneInterval);
   if (ringtoneCtx) ringtoneCtx.close();
-  ringtoneInterval = null;
-  ringtoneCtx = null;
+  ringtoneInterval = null; ringtoneCtx = null;
 }
 
 function endCall() {
-  stopRingtone();
-  stopCallTimer();
+  stopRingtone(); stopCallTimer();
   if (pc) { pc.close(); pc = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   if (remoteStream) { remoteStream = null; }
@@ -656,10 +646,7 @@ async function renderStories() {
   bar.innerHTML = html;
 
   bar.querySelectorAll(".view-status-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const group = JSON.parse(btn.dataset.group);
-      showStatusSlideshow(group.items);
-    });
+    btn.addEventListener("click", () => { const group = JSON.parse(btn.dataset.group); showStatusSlideshow(group.items); });
   });
 
   $("addStatusBtn").addEventListener("click", showCreateStatusModal);
@@ -672,22 +659,15 @@ function showStatusSlideshow(items) {
   
   function renderSlide() {
     const status = items[currentIndex];
-    
     api.request(`/api/v1/friends/status/${status.id}/view`, { method: "POST" }).catch(() => {});
 
     let mediaHTML = "";
     if (status.media_url) {
-      if (status.media_url.match(/\.(mp4|webm|ogg|mov)$/i)) {
-        mediaHTML = `<video src="${status.media_url}" controls autoplay class="w-full h-full object-contain"></video>`;
-      } else {
-        mediaHTML = `<img src="${status.media_url}" class="w-full h-full object-contain" />`;
-      }
+      if (status.media_url.match(/\.(mp4|webm|ogg|mov)$/i)) mediaHTML = `<video src="${status.media_url}" controls autoplay class="w-full h-full object-contain"></video>`;
+      else mediaHTML = `<img src="${status.media_url}" class="w-full h-full object-contain" />`;
     }
 
-    let viewCountHtml = "";
-    if (status.relation === "self" && status.viewers) {
-        viewCountHtml = `<div class="text-xs text-slate-300 mt-1">👁️ ${status.viewers.length} views</div>`;
-    }
+    let viewCountHtml = status.relation === "self" && status.viewers ? `<div class="text-xs text-slate-300 mt-1">👁️ ${status.viewers.length} views</div>` : "";
 
     overlay.innerHTML = `
       <div class="w-full max-w-sm h-full sm:h-[80vh] sm:rounded-2xl bg-slate-900 relative overflow-hidden flex flex-col">
@@ -731,15 +711,9 @@ function showStatusSlideshow(items) {
                 const val = replyInput.value.trim();
                 if (!val) return;
                 if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-                    dmSocket.send(JSON.stringify({ 
-                        type: "dm:send", 
-                        target_id: status.user_id, 
-                        content: val,
-                        reply_to_status_id: status.id
-                    }));
+                    dmSocket.send(JSON.stringify({ type: "dm:send", target_id: status.user_id, content: val, reply_to_status_id: status.id }));
                     alert("Reply sent!");
-                    replyInput.value = "";
-                    overlay.remove();
+                    replyInput.value = ""; overlay.remove();
                 }
             }
         });
