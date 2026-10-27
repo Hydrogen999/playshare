@@ -24,6 +24,7 @@ function gameIcon(slug) {
   if (slug === "ludo") return "🎯";
   if (slug === "chess") return "♟️";
   if (slug === "dice") return "🎲";
+  if (slug === "whot") return "🃏"; // <-- Added Whot
   return "🎮";
 }
 
@@ -31,15 +32,30 @@ function gameLabel(slug) {
   if (slug === "ludo") return "Ludo";
   if (slug === "chess") return "Chess";
   if (slug === "dice") return "Roll-off";
+  if (slug === "whot") return "Whot"; // <-- Added Whot
   return "Game";
 }
+
+function renderRooms(rooms) {
+  const list = $("roomsList"); // <-- THIS WAS MISSING
+  if (!list) return;
+
+  if (!rooms || rooms.length === 0) {
+    list.innerHTML = `
+      <div class="text-center py-6">
+        <div class="text-3xl mb-2 opacity-50">🚪</div>
+        <div class="text-xs text-slate-500">No open rooms right now.</div>
+        <div class="text-[10px] text-slate-600 mt-1">Create one above and share the code!</div>
+      </div>`;
+    return;
+  }
 
   list.innerHTML = rooms.map((r) => {
     const icon = gameIcon(r.game_slug);
     const label = gameLabel(r.game_slug);
     const isFull = r.player_count >= r.max_players;
     const isAlmostFull = r.player_count === r.max_players - 1;
-    const isPlaying = r.status === "playing"; // <-- Check status
+    const isPlaying = r.status === "playing"; // <-- Spectator check
 
     let statusBadge = "";
     if (isPlaying) {
@@ -84,7 +100,7 @@ function gameLabel(slug) {
   list.querySelectorAll("[data-join]").forEach((btn) => {
     btn.addEventListener("click", () => joinRoom(btn.dataset.join));
   });
-
+}
 
 async function refreshRooms() {
   try {
@@ -99,16 +115,12 @@ async function createRoom(gameSlug, maxPlayers, isPublic = true) {
   unlockAudio();
   try { sfx.click(); } catch {}
   try {
-    const res = await api.createRoom({
-      game_slug: gameSlug,
+    const res = await api.createRoom({ 
+      game_slug: gameSlug, 
       max_players: maxPlayers,
-      is_public: isPublic,
+      is_public: isPublic 
     });
-    // Store reconnect token from server
-    if (res.reconnect_token) {
-      localStorage.setItem(`ps_rc_${res.id}`, res.reconnect_token);
-    }
-    showToast(isPublic ? "Public room created!" : "Private room created — share the code!");
+    showToast("Room created! Redirecting…");
     try { sfx.success(); } catch {}
     setTimeout(() => { window.location.href = `/room?id=${res.id}`; }, 400);
   } catch (err) {
@@ -116,7 +128,6 @@ async function createRoom(gameSlug, maxPlayers, isPublic = true) {
     showToast(err.message);
   }
 }
-
 
 async function joinRoom(code) {
   unlockAudio();
@@ -138,14 +149,23 @@ function boot() {
   const ludo3Btn = $("createLudo3Btn");
   const ludo2Btn = $("createLudo2Btn");
   const chessBtn = $("createChessBtn");
+  const whotBtn = $("createWhotBtn"); // <-- Added Whot
+  
+  const privateLudoBtn = $("createPrivateLudoBtn");
+  const privateChessBtn = $("createPrivateChessBtn");
+  
   const codeInput = $("roomCodeInput");
   const codeBtn = $("roomCodeBtn");
   const refreshBtn = $("refreshRoomsBtn");
 
-  if (ludo4Btn) ludo4Btn.addEventListener("click", () => createRoom("ludo", 4));
-  if (ludo3Btn) ludo3Btn.addEventListener("click", () => createRoom("ludo", 3));
-  if (ludo2Btn) ludo2Btn.addEventListener("click", () => createRoom("ludo", 2));
-  if (chessBtn) chessBtn.addEventListener("click", () => createRoom("chess", 2));
+  if (ludo4Btn) ludo4Btn.addEventListener("click", () => createRoom("ludo", 4, true));
+  if (ludo3Btn) ludo3Btn.addEventListener("click", () => createRoom("ludo", 3, true));
+  if (ludo2Btn) ludo2Btn.addEventListener("click", () => createRoom("ludo", 2, true));
+  if (chessBtn) chessBtn.addEventListener("click", () => createRoom("chess", 2, true));
+  if (whotBtn) whotBtn.addEventListener("click", () => createRoom("whot", 4, true));
+  
+  if (privateLudoBtn) privateLudoBtn.addEventListener("click", () => createRoom("ludo", 4, false));
+  if (privateChessBtn) privateChessBtn.addEventListener("click", () => createRoom("chess", 2, false));
 
   if (codeBtn && codeInput) {
     codeBtn.addEventListener("click", () => {
@@ -172,9 +192,5 @@ function boot() {
   refreshRooms();
   pollTimer = setInterval(refreshRooms, 6000);
 }
-const privateLudoBtn = $("createPrivateLudoBtn");
-  const privateChessBtn = $("createPrivateChessBtn");
-  if (privateLudoBtn) privateLudoBtn.addEventListener("click", () => createRoom("ludo", 4, false));
-  if (privateChessBtn) privateChessBtn.addEventListener("click", () => createRoom("chess", 2, false));
+
 boot();
-  
