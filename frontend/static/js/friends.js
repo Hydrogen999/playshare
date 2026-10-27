@@ -21,6 +21,7 @@ const STUN_SERVER = "stun:stun.l.google.com:19302";
 // --- Voice Note Variables ---
 let mediaRecorder = null;
 let audioChunks = [];
+let isRecording = false;
 
 // --- Typing Timeout ---
 let typingTimeout = null;
@@ -268,7 +269,6 @@ function addMessageToUI(m) {
 
   let contentHtml = "";
   if (m.content && (m.content.includes("Missed audio call") || m.content.includes("Missed video call"))) {
-      // Missed Call UI
       contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
   } else if (m.content) {
       contentHtml = `<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>`;
@@ -301,10 +301,7 @@ $("chatInput").addEventListener("input", () => {
   typingTimeout = setTimeout(() => { if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: false })); }, 2000);
 });
 
-// --- CHAT FORM (Text, Image, Voice Note) ---
-// I've added the Mic button logic inside the form submit or a separate button.
-// Let's add a custom UI for uploads in the `chatForm` section.
-// In HTML, we will add the buttons, here we handle the submit.
+// --- TEXT SUBMIT ---
 $("chatForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("chatInput").value.trim();
@@ -320,7 +317,78 @@ $("chatForm").addEventListener("submit", async (e) => {
   dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: false }));
 });
 
-// NOTE: We will handle image & voice uploads via separate functions triggered by new buttons.
+// --- IMAGE UPLOAD ---
+$("chatImageInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file || !activeChatUserId) return;
+  
+  if (!me.profile.is_premium) {
+    alert("👑 Only Premium users can send images in chat.");
+    e.target.value = "";
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  
+  try {
+    const token = localStorage.getItem("ps_token");
+    const res = await fetch("/api/v1/dm/upload", { method: "POST", headers: { "Authorization": `Bearer ${token}` }, body: formData });
+    const data = await res.json();
+    
+    if (data.url && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+      dmSocket.send(JSON.stringify({ type: "dm:send", target_id: activeChatUserId, content: "", media_url: data.url }));
+    }
+  } catch (err) { alert("Failed to upload image"); }
+  e.target.value = "";
+});
+
+// --- VOICE NOTE RECORDING ---
+$("chatVoiceBtn").addEventListener("click", async () => {
+  if (!activeChatUserId) return;
+  
+  if (!isRecording) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const file = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
+        
+        const formData = new FormData();
+        formData.append("file", file);
+        
+        try {
+          const token = localStorage.getItem("ps_token");
+          const res = await fetch("/api/v1/dm/upload", { method: "POST", headers: { "Authorization": `Bearer ${token}` }, body: formData });
+          const data = await res.json();
+          
+          if (data.url && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+            dmSocket.send(JSON.stringify({ type: "dm:send", target_id: activeChatUserId, content: "🎤 Voice Note", media_url: data.url }));
+          }
+        } catch (err) { alert("Failed to send voice note"); }
+        
+        stream.getTracks().forEach(t => t.stop()); // Stop mic
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+      $("voiceIcon").textContent = "⏹️"; // Stop icon
+      $("voiceIcon").classList.add("text-red-500");
+    } catch (err) {
+      alert("Microphone access denied. Please allow microphone in browser settings.");
+    }
+  } else {
+    mediaRecorder.stop();
+    isRecording = false;
+    $("voiceIcon").textContent = "🎤"; // Mic icon
+    $("voiceIcon").classList.remove("text-red-500");
+  }
+});
 
 // ---------------------------------------------------------
 // 4. WEBRTC CALLING SYSTEM
@@ -331,7 +399,6 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   overlay.id = "videoCallOverlay";
   overlay.className = "fixed inset-0 z-[999] bg-[#0b141a] flex flex-col items-center justify-between";
   
-  // Shared Header
   const header = `
     <div class="relative z-10 w-full p-6 flex justify-between items-center">
       <button class="opacity-0 w-12 h-12"></button>
@@ -389,7 +456,6 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     }
   };
 
-  // Switch from Audio to Video
   if (!isVideo) {
       $("btnSwitchToVideo").onclick = async () => {
           try {
@@ -405,13 +471,12 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
               
               if (localStream) localStream.addTrack(videoTrack);
               
-              // Rebuild UI for video
               const name = targetName, av = targetAvatar, pr = isPremium;
               $("videoCallOverlay").remove();
               createVideoOverlay(true, name, av, pr);
-              $("remoteVideo").srcObject = remoteStream;
-              $("localVideo").srcObject = localStream;
-              startCallTimer(); // Resume timer
+              if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
+              if ($("localVideo")) $("localVideo").srcObject = localStream;
+              startCallTimer(); 
           } catch (e) {
               alert("Camera access denied.");
           }
@@ -441,7 +506,21 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
     createVideoOverlay(isVideo, targetName, targetAvatar, isPremium);
     currentCallTargetId = targetId;
 
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
+    // FIX: Better error handling for getUserMedia
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
+    } catch (mediaErr) {
+        if (mediaErr.name === "NotAllowedError") {
+            alert("Permission Denied: Please allow microphone/camera access in your browser settings and try again.");
+        } else if (mediaErr.name === "NotFoundError") {
+            alert("No Microphone/Camera Found: Please make sure your device has a microphone connected.");
+        } else {
+            alert("Could not access camera/microphone. Error: " + mediaErr.message);
+        }
+        endCall();
+        return;
+    }
+
     if ($("localVideo")) $("localVideo").srcObject = localStream;
 
     pc = new RTCPeerConnection({ iceServers: [{ urls: STUN_SERVER }] });
@@ -480,7 +559,6 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
     }, 30000);
 
   } catch (err) {
-    alert("Could not access camera/microphone.");
     endCall();
   }
 }
