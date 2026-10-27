@@ -15,6 +15,7 @@ from app.models.user import User
 from app.schemas.social import FriendOut, FriendRequestOut
 from app.services.cosmetics import get_frame_styles_bulk
 from app.services.premium import premium_bulk
+from app.models.social import Friendship, Notification, Status, StatusView
 
 router = APIRouter(prefix="/api/v1/friends", tags=["friends"])
 
@@ -246,3 +247,42 @@ def get_status_feed(me: User = Depends(get_current_user), db: Session = Depends(
             "created_at": s.created_at.isoformat()
         })
     return out
+@router.get("/status/feed")
+def get_status_feed(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    statuses = db.query(Status).filter(Status.expires_at > now).all()
+    
+    out = []
+    for s in statuses:
+        u = db.get(User, s.user_id)
+        if not u or not u.profile: continue
+        
+        relation = "self" if s.user_id == me.id else ("friend" if _find_friendship(db, me.id, s.user_id) else "stranger")
+        
+        viewers = []
+        if s.user_id == me.id:
+            # If it's my status, fetch the list of people who viewed it
+            views = db.query(StatusView).filter(StatusView.status_id == s.id).all()
+            for v in views:
+                vu = db.get(User, v.viewer_id)
+                if vu:
+                    viewers.append({"user_id": vu.id, "username": vu.username, "avatar_id": vu.profile.avatar_id})
+
+        out.append({
+            "id": s.id, "user_id": s.user_id, "username": u.username,
+            "avatar_id": u.profile.avatar_id, "content": s.content,
+            "game_invite": s.game_invite, "media_url": s.media_url,
+            "relation": relation, "created_at": s.created_at.isoformat(),
+            "viewers": viewers # <-- NEW: Send viewers to frontend
+        })
+    return out
+
+# 2. Add this new endpoint
+@router.post("/status/{status_id}/view")
+def mark_status_view(status_id: str, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    existing = db.query(StatusView).filter(StatusView.status_id == status_id, StatusView.viewer_id == me.id).first()
+    if not existing:
+        v = StatusView(status_id=status_id, viewer_id=me.id)
+        db.add(v)
+        db.commit()
+    return {"ok": True}
