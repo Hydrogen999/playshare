@@ -6,6 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.ws import lobby as ws_lobby
+from app.ws import room as ws_room
+from app.ws import dm as ws_dm
+
+app.include_router(ws_dm.router) 
+
 from app import models  # noqa: F401
 from app.config import settings
 from app.database import Base, SessionLocal, engine
