@@ -16,6 +16,7 @@ let remoteStream = null;
 let currentCallTargetId = null;
 let isVideoCall = false;
 let isMuted = false;
+let callTimeout = null; // <-- THIS WAS MISSING!
 const STUN_SERVER = "stun:stun.l.google.com:19302";
 
 // --- Voice Note Variables ---
@@ -66,7 +67,12 @@ function connectDMSocket() {
       }
     }
     else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer);
-    else if (msg.type === "call:answer") { if (pc) { clearTimeout(callTimeout); pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); } }
+    else if (msg.type === "call:answer") { 
+        if (pc) {
+            clearTimeout(callTimeout); 
+            pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+        }
+    }
     else if (msg.type === "call:ice-candidate") { if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); }
     else if (msg.type === "call:end") endCall();
     else if (msg.type === "call:reject") {
@@ -269,7 +275,6 @@ function addMessageToUI(m) {
 
   let contentHtml = "";
   if (m.content && (m.content.includes("Missed audio call") || m.content.includes("Missed video call"))) {
-      // Missed Call UI
       contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
   } else if (m.content) {
       contentHtml = `<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>`;
@@ -302,7 +307,6 @@ $("chatInput").addEventListener("input", () => {
   typingTimeout = setTimeout(() => { if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: false })); }, 2000);
 });
 
-// --- SUBMIT TEXT ---
 $("chatForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("chatInput").value.trim();
@@ -318,7 +322,6 @@ $("chatForm").addEventListener("submit", async (e) => {
   dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: false }));
 });
 
-// --- UPLOAD IMAGE (HTTP Upload -> WebSocket URL) ---
 $("chatImageInput").addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file || !activeChatUserId) return;
@@ -327,7 +330,6 @@ $("chatImageInput").addEventListener("change", async (e) => {
     formData.append("file", file);
 
     try {
-        // 1. Upload to backend
         const token = localStorage.getItem("ps_token");
         const res = await fetch("/api/v1/dm/upload", {
             method: "POST",
@@ -338,7 +340,6 @@ $("chatImageInput").addEventListener("change", async (e) => {
         if (!res.ok) throw new Error("Upload failed");
         const data = await res.json();
         
-        // 2. Send the URL via WebSocket
         dmSocket.send(JSON.stringify({ 
             type: "dm:send", 
             target_id: activeChatUserId, 
@@ -351,7 +352,6 @@ $("chatImageInput").addEventListener("change", async (e) => {
     e.target.value = ""; 
 });
 
-// --- VOICE NOTE LOGIC (HTTP Upload -> WebSocket URL) ---
 $("voiceNoteBtn").addEventListener("click", async () => {
     if (!activeChatUserId) return;
 
@@ -375,7 +375,6 @@ $("voiceNoteBtn").addEventListener("click", async () => {
                 formData.append("file", file);
 
                 try {
-                    // 1. Upload to backend
                     const token = localStorage.getItem("ps_token");
                     const res = await fetch("/api/v1/dm/upload", {
                         method: "POST",
@@ -385,7 +384,6 @@ $("voiceNoteBtn").addEventListener("click", async () => {
                     if (!res.ok) throw new Error("Upload failed");
                     const data = await res.json();
 
-                    // 2. Send URL via WebSocket
                     dmSocket.send(JSON.stringify({ 
                         type: "dm:send", 
                         target_id: activeChatUserId, 
@@ -488,13 +486,12 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
               
               if (localStream) localStream.addTrack(videoTrack);
               
-              // Rebuild UI for video
               const name = targetName, av = targetAvatar, pr = isPremium;
               $("videoCallOverlay").remove();
               createVideoOverlay(true, name, av, pr);
               $("remoteVideo").srcObject = remoteStream;
               $("localVideo").srcObject = localStream;
-              startCallTimer(); // Resume timer
+              startCallTimer(); 
           } catch (e) {
               alert("Camera access denied.");
           }
@@ -647,7 +644,6 @@ function showIncomingCall(senderId, offer) {
   };
 }
 
-// --- RINGTONE ---
 let ringtoneCtx = null;
 let ringtoneInterval = null;
 
@@ -676,6 +672,7 @@ function stopRingtone() {
 }
 
 function endCall() {
+  clearTimeout(callTimeout); // <-- ADDED THIS
   stopRingtone(); stopCallTimer();
   if (pc) { pc.close(); pc = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
@@ -688,9 +685,6 @@ function endCall() {
   currentCallTargetId = null;
 }
 
-// ---------------------------------------------------------
-// 5. STATUS / STORIES
-// ---------------------------------------------------------
 async function renderStories() {
   let bar = $("storyBar");
   if (!bar) {
@@ -863,9 +857,6 @@ function showCreateStatusModal() {
   });
 }
 
-// ---------------------------------------------------------
-// 6. BOOT
-// ---------------------------------------------------------
 async function refreshAll() {
   try {
     [friends, requests, conversations] = await Promise.all([api.listFriends(), api.listFriendRequests(), api.listConversations()]);
