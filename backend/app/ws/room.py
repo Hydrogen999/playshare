@@ -47,6 +47,7 @@ def _elo_of(user: User | None, default: int = 1200) -> int:
 class RoomHub:
     def __init__(self):
         self.local: dict[str, dict[str, WebSocket]] = {}
+        self.spectators: dict[str, set[str]] = {} # Track spectators
         self._redis = None
         self._pubsubs: dict[str, object] = {}
         self._tasks: dict[str, asyncio.Task] = {}
@@ -126,12 +127,16 @@ class RoomHub:
         else:
             await self.publish(room_id, raw, target=user_id)
 
-    async def join(self, room_id: str, user_id: str, ws: WebSocket):
+    async def join(self, room_id: str, user_id: str, ws: WebSocket, spectator: bool = False):
         self.local.setdefault(room_id, {})[user_id] = ws
+        if spectator:
+            self.spectators.setdefault(room_id, set()).add(user_id)
         await self.subscribe(room_id)
 
     async def leave(self, room_id: str, user_id: str):
         self.local.get(room_id, {}).pop(user_id, None)
+        if room_id in self.spectators:
+            self.spectators[room_id].discard(user_id)
 
 
 hub = RoomHub()
@@ -201,6 +206,12 @@ def _settle_match(db: Session, m: Match, winner_id: str | None) -> dict:
     m.status = "finished"
     m.winner_id = winner_id
     m.result = "draw" if winner_id is None else "win"
+    
+    # Set Room back to waiting
+    room = db.get(Room, m.room_id)
+    if room:
+        room.status = "waiting"
+        
     db.commit()
     try:
         return award_match_xp(db, m)
@@ -246,6 +257,7 @@ def _start_ludo_match(db: Session, room: Room) -> Match | None:
         room_id=room.id, game_slug="ludo", status="playing", wager=room.wager or 0,
         player_a=user_ids[0], player_b=user_ids[1], state_json=json.dumps(ludo_state_to_dict(state)),
     )
+    room.status = "playing" # <-- Update room status
     db.add(m)
     db.commit()
     db.refresh(m)
@@ -282,6 +294,7 @@ def _start_chess_match(db: Session, room: Room) -> Match | None:
         room_id=room.id, game_slug="chess", status="playing", wager=room.wager or 0,
         player_a=white, player_b=black, state_json=json.dumps(state),
     )
+    room.status = "playing" # <-- Update room status
     db.add(m)
     db.commit()
     db.refresh(m)
@@ -333,7 +346,6 @@ def _load_whot_state(m: Match) -> WhotState:
     return whot_state_from_dict(json.loads(m.state_json))
 
 def _save_whot_state(db: Session, m: Match, state: WhotState):
-    # --- FIX: Use full state for database ---
     m.state_json = json.dumps(whot_full_state(state)) 
     db.commit()
 
@@ -350,9 +362,9 @@ def _start_whot_match(db: Session, room: Room) -> Match | None:
     m = Match(
         room_id=room.id, game_slug="whot", status="playing", wager=room.wager or 0,
         player_a=user_ids[0], player_b=user_ids[1], 
-        # --- FIX: Use full state for database ---
         state_json=json.dumps(whot_full_state(state)),
     )
+    room.status = "playing" # <-- Update room status
     db.add(m)
     db.commit()
     db.refresh(m)
@@ -368,6 +380,7 @@ async def room_ws(
     room_id: str,
     token: str = Query(...),
     reconnect_token: str | None = Query(None),
+    spectator: bool = Query(False), # <-- NEW SPECTATOR FLAG
 ):
     try:
         payload = decode_token(token)
@@ -387,14 +400,20 @@ async def room_ws(
         if not user or not room or user.is_banned:
             await ws.close(code=status.WS_1008_POLICY_VIOLATION)
             return
+            
         members = db.query(RoomMember).filter(RoomMember.room_id == room_id).all()
-        if user_id not in {m.user_id for m in members}:
-            await ws.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-
-        if reconnect_token and not presence_svc.validate_token(db, room_id, user_id, reconnect_token):
-            await ws.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
+        
+        if spectator:
+            if room.status != "playing":
+                await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+        else:
+            if user_id not in {m.user_id for m in members}:
+                await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+            if reconnect_token and not presence_svc.validate_token(db, room_id, user_id, reconnect_token):
+                await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
 
         members_payload = [_member_payload(db, m) for m in members]
         msgs = db.query(Message).filter(Message.room_id == room_id).order_by(Message.created_at.desc()).limit(50).all()
@@ -422,25 +441,30 @@ async def room_ws(
                 except Exception:
                     chess_state["board"] = None
             elif pending.game_slug == "whot":
-                # Send secure state to frontend
-                whot_state = whot_state_to_dict(_load_whot_state(pending), user_id)
+                # Send secure state to frontend. If spectator, hide both hands.
+                viewer = "spectator" if spectator else user_id
+                whot_state = whot_state_to_dict(_load_whot_state(pending), viewer)
     finally:
         db.close()
 
     await ws.accept()
 
-    db_p = SessionLocal()
-    try:
-        issue_token = presence_svc.get_or_create_token(db_p, room_id, user_id)
-        await presence_svc.mark_online(db_p, room_id, user_id, reconnect_token or issue_token)
-    finally:
-        db_p.close()
+    if not spectator:
+        db_p = SessionLocal()
+        try:
+            issue_token = presence_svc.get_or_create_token(db_p, room_id, user_id)
+            await presence_svc.mark_online(db_p, room_id, user_id, reconnect_token or issue_token)
+        finally:
+            db_p.close()
+    else:
+        issue_token = None
 
-    await hub.join(room_id, user_id, ws)
+    await hub.join(room_id, user_id, ws, spectator=spectator)
 
     await ws.send_text(json.dumps({
         "type": "room:init",
         "you": user_id,
+        "is_spectator": spectator, # <-- Tell frontend they are watching
         "reconnect_token": issue_token,
         "room": room_meta,
         "members": members_payload,
@@ -451,7 +475,8 @@ async def room_ws(
         "whot_state": whot_state,
     }))
 
-    await hub.publish(room_id, {"type": "room:player_joined", "user_id": user_id}, exclude=user_id)
+    if not spectator:
+        await hub.publish(room_id, {"type": "room:player_joined", "user_id": user_id}, exclude=user_id)
 
     try:
         while True:
@@ -464,6 +489,9 @@ async def room_ws(
             mtype = msg.get("type")
 
             if mtype == "presence:ping":
+                if spectator: 
+                    await ws.send_text(json.dumps({"type": "presence:pong"}))
+                    continue
                 db_h: Session = SessionLocal()
                 try:
                     await presence_svc.mark_online(db_h, room_id, user_id)
@@ -474,6 +502,10 @@ async def room_ws(
 
             if mtype == "ping":
                 await ws.send_text(json.dumps({"type": "pong"}))
+                continue
+                
+            # Spectators can only chat
+            if spectator and mtype != "chat:send":
                 continue
 
             elif mtype == "chat:send":
@@ -604,10 +636,15 @@ async def room_ws(
                             m5 = _start_whot_match(db5, r)
                             if m5:
                                 for member in db5.query(RoomMember).filter(RoomMember.room_id == room_id).all():
-                                    # Send secure state to frontend
                                     state_dict = whot_state_to_dict(_load_whot_state(m5), member.user_id)
                                     await hub.send_to_user(room_id, member.user_id, {
                                         "type": "whot:start", "match_id": m5.id, "wager": m5.wager, "state": state_dict
+                                    })
+                                # Send start to spectators
+                                spec_state = whot_state_to_dict(_load_whot_state(m5), "spectator")
+                                for spec_id in hub.spectators.get(room_id, set()):
+                                    await hub.send_to_user(room_id, spec_id, {
+                                        "type": "whot:start", "match_id": m5.id, "wager": m5.wager, "state": spec_state
                                     })
                         finally:
                             db5.close()
@@ -828,6 +865,13 @@ async def room_ws(
                         await hub.send_to_user(room_id, member.user_id, {
                             "type": "whot:played", "user_id": user_id, "state": state_dict
                         })
+                    
+                    # Send to spectators
+                    spec_state = whot_state_to_dict(state, "spectator")
+                    for spec_id in hub.spectators.get(room_id, set()):
+                        await hub.send_to_user(room_id, spec_id, {
+                            "type": "whot:played", "user_id": user_id, "state": spec_state
+                        })
 
                     if result.get("winner"):
                         xp_rewards = _settle_match(db_w, m, user_id)
@@ -856,6 +900,13 @@ async def room_ws(
                         await hub.send_to_user(room_id, member.user_id, {
                             "type": "whot:played", "user_id": user_id, "state": state_dict
                         })
+
+                    # Send to spectators
+                    spec_state = whot_state_to_dict(state, "spectator")
+                    for spec_id in hub.spectators.get(room_id, set()):
+                        await hub.send_to_user(room_id, spec_id, {
+                            "type": "whot:played", "user_id": user_id, "state": spec_state
+                        })
                 finally:
                     db_wd.close()
 
@@ -863,9 +914,10 @@ async def room_ws(
         pass
     finally:
         await hub.leave(room_id, user_id)
-        db_off: Session = SessionLocal()
-        try:
-            await presence_svc.mark_offline(db_off, room_id, user_id)
-        finally:
-            db_off.close()
-        await hub.publish(room_id, {"type": "room:player_disconnected", "user_id": user_id})
+        if not spectator:
+            db_off: Session = SessionLocal()
+            try:
+                await presence_svc.mark_offline(db_off, room_id, user_id)
+            finally:
+                db_off.close()
+            await hub.publish(room_id, {"type": "room:player_disconnected", "user_id": user_id})
