@@ -205,3 +205,27 @@ def send_dm(
         content=m.content, media_url=m.media_url, read=False,
         created_at=m.created_at.isoformat(),
     )
+    # Add these imports at the top of dm.py if they aren't there:
+import os
+import shutil
+import uuid
+from fastapi import UploadFile, File
+
+# Add this route at the bottom of dm.py:
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+UPLOAD_DIR = os.path.join(BASE_DIR, "frontend", "static", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@router.post("/upload")
+def upload_dm_media(
+    file: UploadFile = File(...),
+    me: User = Depends(get_current_user)
+):
+    ext = file.filename.split(".")[-1]
+    filename = f"dm_{uuid.uuid4().hex}.{ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    
+    with open(filepath, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    return {"url": f"/static/uploads/{filename}"}
