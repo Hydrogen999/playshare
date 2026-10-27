@@ -14,8 +14,14 @@ let pc = null;
 let localStream = null;
 let remoteStream = null;
 let currentCallTargetId = null;
-let callTimeout = null; // <-- NEW: Timeout for calls
+let callTimeout = null;
 const STUN_SERVER = "stun:stun.l.google.com:19302";
+
+// --- Call Timer & Ringtone ---
+let callTimerInterval = null;
+let callSeconds = 0;
+let ringtoneCtx = null;
+let ringtoneInterval = null;
 
 // --- Typing Timeout ---
 let typingTimeout = null;
@@ -76,7 +82,7 @@ function connectDMSocket() {
         });
       }
     }
-    else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer);
+    else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer, msg.is_video);
     else if (msg.type === "call:answer") { 
         if (pc) {
             clearTimeout(callTimeout); // Stop the timeout if they answer!
@@ -272,8 +278,10 @@ async function openChat(userId, username, avatarId, isPremium) {
   }
 
   $("chatInput").focus();
-  $("startAudioCallBtn").onclick = () => initiateCall(userId, false);
-  $("startVideoCallBtn").onclick = () => initiateCall(userId, true);
+  
+  // Wire Call Buttons with user info
+  $("startAudioCallBtn").onclick = () => initiateCall(userId, false, username, avatarId, isPremium);
+  $("startVideoCallBtn").onclick = () => initiateCall(userId, true, username, avatarId, isPremium);
 }
 
 async function loadMessages() {
@@ -344,41 +352,165 @@ $("chatForm").addEventListener("submit", async (e) => {
 });
 
 // ---------------------------------------------------------
-// 4. WEBRTC CALLING SYSTEM
+// 4. WEBRTC CALLING SYSTEM (STANDARD UI)
 // ---------------------------------------------------------
-function createVideoOverlay() {
+function playRingtone() {
+  try {
+    ringtoneCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const playBeep = () => {
+      const osc = ringtoneCtx.createOscillator();
+      const gain = ringtoneCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(440, ringtoneCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ringtoneCtx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.5, ringtoneCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ringtoneCtx.currentTime + 0.5);
+      osc.connect(gain);
+      gain.connect(ringtoneCtx.destination);
+      osc.start();
+      osc.stop(ringtoneCtx.currentTime + 0.5);
+    };
+    playBeep();
+    ringtoneInterval = setInterval(playBeep, 1500);
+  } catch (e) { console.log("Audio error", e); }
+}
+
+function stopRingtone() {
+  if (ringtoneInterval) clearInterval(ringtoneInterval);
+  if (ringtoneCtx) ringtoneCtx.close();
+  ringtoneInterval = null;
+  ringtoneCtx = null;
+}
+
+function startCallTimer() {
+  clearInterval(callTimerInterval);
+  callSeconds = 0;
+  callTimerInterval = setInterval(() => {
+    callSeconds++;
+    const mins = String(Math.floor(callSeconds / 60)).padStart(2, '0');
+    const secs = String(callSeconds % 60).padStart(2, '0');
+    const timerEl = $("callTimer");
+    if (timerEl) timerEl.textContent = `${mins}:${secs}`;
+  }, 1000);
+}
+
+function stopCallTimer() {
+  clearInterval(callTimerInterval);
+}
+
+function createVideoOverlay(isVideo) {
   if ($("videoCallOverlay")) return;
   const overlay = document.createElement("div");
   overlay.id = "videoCallOverlay";
-  overlay.className = "video-overlay";
-  overlay.innerHTML = `
-    <video id="remoteVideo" autoplay playsinline class="flex-1 object-cover"></video>
-    <video id="localVideo" autoplay playsinline muted class="absolute bottom-4 right-4 w-32 h-48 object-cover rounded-xl border-2 border-slate-700 shadow-2xl z-10"></video>
-    <div class="absolute top-4 left-4 text-white font-bold p-2 bg-black/50 rounded-lg z-10" id="callStatus">Calling...</div>
-    <button id="endCallBtn" class="absolute bottom-6 left-1/2 -translate-x-1/2 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-full font-bold shadow-lg z-10">End Call</button>
-  `;
+  overlay.className = "fixed inset-0 z-[999] bg-[#0b141a] flex flex-col items-center justify-between hidden";
+  
+  if (isVideo) {
+    overlay.innerHTML = `
+      <video id="remoteVideo" autoplay playsinline class="absolute inset-0 w-full h-full object-cover z-0"></video>
+      
+      <div class="relative z-10 w-full p-6 flex justify-between items-center bg-gradient-to-b from-black/60 to-transparent">
+        <button class="bg-slate-800/80 p-3 rounded-full text-white"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg></button>
+        <div class="text-center">
+          <div id="callName" class="text-white font-bold text-lg"></div>
+          <div id="callTimer" class="text-slate-300 text-sm">Calling...</div>
+        </div>
+        <button class="opacity-0 w-12 h-12"></button>
+      </div>
+
+      <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-slate-700 shadow-2xl z-20"></video>
+
+      <div class="relative z-10 mb-8 bg-[#1f2c33]/90 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-6 shadow-2xl">
+        <button class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button>
+        <button id="btnMute" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button>
+        <button id="btnEnd" class="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center text-white text-2xl shadow-lg shadow-red-500/50">📞</button>
+      </div>
+    `;
+  } else {
+    overlay.innerHTML = `
+      <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+      
+      <div class="relative z-10 w-full p-6 flex justify-between items-center">
+        <button class="bg-slate-800/80 p-3 rounded-full text-white"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg></button>
+        <div class="text-center">
+          <div id="callName" class="text-white font-bold text-2xl flex items-center justify-center gap-2"></div>
+          <div id="callTimer" class="text-slate-400 text-sm mt-1">End-to-end encrypted</div>
+        </div>
+        <button class="opacity-0 w-12 h-12"></button>
+      </div>
+
+      <div class="relative z-10 flex-1 flex flex-col items-center justify-center">
+        <div class="w-40 h-40 rounded-full border-4 border-slate-700 overflow-hidden shadow-[0_0_50px_rgba(255,255,255,0.1)]" id="callAvatar"></div>
+      </div>
+
+      <div class="relative z-10 mb-12 bg-[#1f2c33]/90 backdrop-blur-md w-11/12 max-w-sm px-6 py-6 rounded-3xl grid grid-cols-3 gap-6 shadow-2xl">
+        <div class="flex flex-col items-center gap-2">
+          <button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🔊</button>
+          <span class="text-xs text-slate-300">Speaker</span>
+        </div>
+        <div class="flex flex-col items-center gap-2">
+          <button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button>
+          <span class="text-xs text-slate-300">Video</span>
+        </div>
+        <div class="flex flex-col items-center gap-2">
+          <button id="btnMute" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button>
+          <span class="text-xs text-slate-300">Mute</span>
+        </div>
+        <div class="flex flex-col items-center gap-2 mt-2">
+          <button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">•••</button>
+          <span class="text-xs text-slate-300">More</span>
+        </div>
+        <div class="flex flex-col items-center gap-2 mt-2">
+          <button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">↗</button>
+          <span class="text-xs text-slate-300">Share</span>
+        </div>
+        <div class="flex flex-col items-center gap-2 mt-2">
+          <button id="btnEnd" class="w-14 h-14 rounded-full bg-red-500 flex items-center justify-center text-white text-xl shadow-lg shadow-red-500/50">📞</button>
+          <span class="text-xs text-slate-300 text-red-500 font-bold">End</span>
+        </div>
+      </div>
+    `;
+  }
+
   document.body.appendChild(overlay);
-  $("endCallBtn").onclick = endCall;
+  
+  $("btnEnd").onclick = endCall;
+  
+  let isMuted = false;
+  $("btnMute").onclick = () => {
+    if (localStream) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        isMuted = !audioTrack.enabled;
+        $("btnMute").classList.toggle("bg-white", isMuted);
+        $("btnMute").classList.toggle("text-black", isMuted);
+      }
+    }
+  };
 }
 
-async function initiateCall(targetId, isVideo) {
+async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremium) {
   try {
-    createVideoOverlay();
-    $("videoCallOverlay").classList.add("active");
-    $("callStatus").textContent = "Calling...";
+    createVideoOverlay(isVideo);
+    $("videoCallOverlay").classList.remove("hidden");
+    $("videoCallOverlay").classList.add("flex");
+    
+    $("callName").innerHTML = `${targetName} ${isPremium ? "👑" : ""}`;
+    if (!isVideo) $("callAvatar").innerHTML = avatarHTML(targetAvatar, "xl");
+    
+    $("callTimer").textContent = "Calling...";
     currentCallTargetId = targetId;
 
-    // --- ADDED TIMEOUT: If no answer in 30 seconds, cancel ---
     clearTimeout(callTimeout);
     callTimeout = setTimeout(() => {
-        if (currentCallTargetId) {
-            alert("Call timed out. User is offline or didn't answer.");
+        if (currentCallTargetId && $("callTimer") && $("callTimer").textContent === "Calling...") {
+            alert("User is offline or didn't answer.");
             endCall();
         }
     }, 30000);
 
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
-    $("localVideo").srcObject = localStream;
+    if ($("localVideo")) $("localVideo").srcObject = localStream;
 
     pc = new RTCPeerConnection({ iceServers: [{ urls: STUN_SERVER }] });
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
@@ -386,8 +518,10 @@ async function initiateCall(targetId, isVideo) {
     pc.ontrack = (event) => {
       if (!remoteStream) remoteStream = new MediaStream();
       remoteStream.addTrack(event.track);
-      $("remoteVideo").srcObject = remoteStream;
-      $("callStatus").textContent = "Connected";
+      if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
+      $("callTimer").textContent = "Connected";
+      stopRingtone();
+      startCallTimer();
     };
 
     pc.onicecandidate = (event) => {
@@ -400,7 +534,7 @@ async function initiateCall(targetId, isVideo) {
     await pc.setLocalDescription(offer);
     
     if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-        dmSocket.send(JSON.stringify({ type: "call:offer", target_id: targetId, offer: offer }));
+        dmSocket.send(JSON.stringify({ type: "call:offer", target_id: targetId, offer: offer, is_video: isVideo }));
     } else {
         alert("Could not connect to chat server.");
         endCall();
@@ -411,31 +545,45 @@ async function initiateCall(targetId, isVideo) {
   }
 }
 
-function showIncomingCall(senderId, offer) {
+function showIncomingCall(senderId, offer, isVideo) {
+  playRingtone();
+
   const modal = document.createElement("div");
-  modal.className = "incoming-call-modal bg-slate-800 border border-slate-700 p-4 rounded-2xl shadow-2xl flex items-center gap-4";
+  modal.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-slate-800 border border-slate-700 p-4 rounded-3xl shadow-2xl flex items-center gap-4 animate-bounce";
+  
+  const caller = friends.find(f => f.id === senderId) || {username: "Unknown", avatar_id: "fox", is_premium: false};
+  
   modal.innerHTML = `
-    <div class="text-white font-bold">Incoming Call...</div>
-    <button id="acceptCallBtn" class="bg-emerald-600 px-4 py-2 rounded-lg text-white font-bold">Accept</button>
-    <button id="rejectCallBtn" class="bg-red-600 px-4 py-2 rounded-lg text-white font-bold">Reject</button>
+    <div>${avatarHTML(caller.avatar_id, "md", null, caller.is_premium)}</div>
+    <div>
+      <div class="text-white font-bold text-lg">${caller.username}</div>
+      <div class="text-slate-400 text-xs">Incoming ${isVideo ? 'Video' : 'Audio'} Call...</div>
+    </div>
+    <button id="acceptCallBtn" class="bg-emerald-600 hover:bg-emerald-700 w-12 h-12 rounded-full text-white text-xl ml-4 flex items-center justify-center">📞</button>
+    <button id="rejectCallBtn" class="bg-red-600 hover:bg-red-700 w-12 h-12 rounded-full text-white text-xl flex items-center justify-center">✖</button>
   `;
   document.body.appendChild(modal);
 
   $("rejectCallBtn").onclick = () => {
+    stopRingtone();
     if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:end", target_id: senderId }));
     modal.remove();
   };
 
   $("acceptCallBtn").onclick = async () => {
+    stopRingtone();
     modal.remove();
     currentCallTargetId = senderId;
-    createVideoOverlay();
-    $("videoCallOverlay").classList.add("active");
-    $("callStatus").textContent = "Connecting...";
+    
+    createVideoOverlay(isVideo);
+    $("videoCallOverlay").classList.remove("hidden");
+    $("videoCallOverlay").classList.add("flex");
+    $("callName").innerHTML = `${caller.username} ${caller.is_premium ? "👑" : ""}`;
+    if (!isVideo) $("callAvatar").innerHTML = avatarHTML(caller.avatar_id, "xl");
 
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      $("localVideo").srcObject = localStream;
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
+      if ($("localVideo")) $("localVideo").srcObject = localStream;
 
       pc = new RTCPeerConnection({ iceServers: [{ urls: STUN_SERVER }] });
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
@@ -443,8 +591,9 @@ function showIncomingCall(senderId, offer) {
       pc.ontrack = (event) => {
         if (!remoteStream) remoteStream = new MediaStream();
         remoteStream.addTrack(event.track);
-        $("remoteVideo").srcObject = remoteStream;
-        $("callStatus").textContent = "Connected";
+        if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
+        $("callTimer").textContent = "Connected";
+        startCallTimer();
       };
 
       pc.onicecandidate = (event) => {
@@ -468,15 +617,20 @@ function showIncomingCall(senderId, offer) {
 }
 
 function endCall() {
-  clearTimeout(callTimeout); // Clear the timeout!
+  stopRingtone();
+  stopCallTimer();
+  clearTimeout(callTimeout);
+  
   if (pc) { pc.close(); pc = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   if (remoteStream) { remoteStream = null; }
+  
   if (currentCallTargetId && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
     try { dmSocket.send(JSON.stringify({ type: "call:end", target_id: currentCallTargetId })); } catch (e) {}
   }
+  
   const overlay = $("videoCallOverlay");
-  if (overlay) overlay.classList.remove("active");
+  if (overlay) overlay.remove(); // Fully remove to reset state
   currentCallTargetId = null;
 }
 
@@ -543,7 +697,6 @@ function showStatusSlideshow(items) {
   function renderSlide() {
     const status = items[currentIndex];
     
-    // Mark as viewed
     api.request(`/api/v1/friends/status/${status.id}/view`, { method: "POST" }).catch(() => {});
 
     let mediaHTML = "";
@@ -555,10 +708,19 @@ function showStatusSlideshow(items) {
       }
     }
 
-    // If it's my own status, show the view count
     let viewCountHtml = "";
     if (status.relation === "self" && status.viewers) {
         viewCountHtml = `<div class="text-xs text-slate-300 mt-1">👁️ ${status.viewers.length} views</div>`;
+    }
+
+    // Fix for the reply input box showing on your own status
+    let replyBoxHtml = "";
+    if (status.relation !== "self") {
+        replyBoxHtml = `
+        <div class="absolute bottom-4 left-4 right-4 z-20">
+            <input type="text" id="statusReplyInput" placeholder="Reply to story..." class="w-full bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-full px-4 py-2 text-sm focus:outline-none" />
+        </div>
+        `;
     }
 
     overlay.innerHTML = `
@@ -579,13 +741,8 @@ function showStatusSlideshow(items) {
         </div>
         <div id="tapLeft" class="absolute top-0 bottom-0 left-0 w-1/3 z-10 cursor-pointer"></div>
         <div id="tapRight" class="absolute top-0 bottom-0 right-0 w-2/3 z-10 cursor-pointer"></div>
-
-        <!-- Reply Input Box (Only if not my status) -->
-        ${!status.relation === "self" ? "" : `
-        <div class="absolute bottom-4 left-4 right-4 z-20">
-            <input type="text" id="statusReplyInput" placeholder="Reply to story..." class="w-full bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-full px-4 py-2 text-sm focus:outline-none" />
-        </div>
-        `}
+        
+        ${replyBoxHtml}
       </div>
     `;
 
@@ -596,7 +753,6 @@ function showStatusSlideshow(items) {
       else { overlay.remove(); }
     });
 
-    // Handle Reply
     const replyInput = overlay.querySelector("#statusReplyInput");
     if (replyInput) {
         replyInput.addEventListener("keypress", (e) => {
@@ -704,4 +860,4 @@ async function boot() {
   }, 10000);
 }
 
-boot();v
+boot();
