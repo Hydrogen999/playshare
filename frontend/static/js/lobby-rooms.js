@@ -34,31 +34,23 @@ function gameLabel(slug) {
   return "Game";
 }
 
-function renderRooms(rooms) {
-  const list = $("roomsList");
-  if (!list) return;
-
-  if (!rooms || rooms.length === 0) {
-    list.innerHTML = `
-      <div class="text-center py-6">
-        <div class="text-3xl mb-2 opacity-50">🚪</div>
-        <div class="text-xs text-slate-500">No open rooms right now.</div>
-        <div class="text-[10px] text-slate-600 mt-1">Create one above and share the code!</div>
-      </div>`;
-    return;
-  }
-
   list.innerHTML = rooms.map((r) => {
     const icon = gameIcon(r.game_slug);
     const label = gameLabel(r.game_slug);
     const isFull = r.player_count >= r.max_players;
     const isAlmostFull = r.player_count === r.max_players - 1;
+    const isPlaying = r.status === "playing"; // <-- Check status
 
-    const statusBadge = isFull
-      ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-bold">FULL</span>`
-      : isAlmostFull
-      ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">1 SLOT</span>`
-      : `<span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold">OPEN</span>`;
+    let statusBadge = "";
+    if (isPlaying) {
+      statusBadge = `<span class="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-bold animate-pulse">LIVE</span>`;
+    } else if (isFull) {
+      statusBadge = `<span class="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-bold">FULL</span>`;
+    } else if (isAlmostFull) {
+      statusBadge = `<span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">1 SLOT</span>`;
+    } else {
+      statusBadge = `<span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold">OPEN</span>`;
+    }
 
     return `
       <div class="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-800/40 hover:border-brand-500/40 transition px-3 py-2.5">
@@ -74,7 +66,11 @@ function renderRooms(rooms) {
             <span class="font-mono">${r.code}</span>
           </div>
         </div>
-        ${!isFull ? `
+        ${isPlaying ? `
+          <a href="/room?id=${r.id}&spectate=true" class="text-[10px] px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 font-bold transition flex-shrink-0 text-white shadow-lg shadow-red-500/20">
+            👁️ Watch
+          </a>
+        ` : !isFull ? `
           <button data-join="${r.code}" class="text-[10px] px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 font-bold transition flex-shrink-0">
             Join →
           </button>
@@ -88,7 +84,7 @@ function renderRooms(rooms) {
   list.querySelectorAll("[data-join]").forEach((btn) => {
     btn.addEventListener("click", () => joinRoom(btn.dataset.join));
   });
-}
+
 
 async function refreshRooms() {
   try {
