@@ -74,7 +74,6 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
             elif mtype == "dm:send":
                 content = (msg.get("content") or "").strip()
                 reply_to_id = msg.get("reply_to_id")
-                reply_to_status_id = msg.get("reply_to_status_id") # <-- NEW
                 media_url = msg.get("media_url")
 
                 if not content and not media_url:
@@ -87,8 +86,7 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
                         recipient_id=target_id, 
                         content=content[:1000],
                         media_url=media_url,
-                        reply_to_id=reply_to_id,
-                        reply_to_status_id=reply_to_status_id # <-- NEW
+                        reply_to_id=reply_to_id
                     )
                     db.add(mm)
                     db.flush()
@@ -114,7 +112,6 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
                         "content": mm.content,
                         "media_url": mm.media_url,
                         "reply_to_id": mm.reply_to_id,
-                        "reply_to_status_id": mm.reply_to_status_id, # <-- NEW
                         "created_at": mm.created_at.isoformat()
                     }
                 except Exception as e:
@@ -145,7 +142,38 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
                     "reader_id": user_id
                 })
 
-            elif mtype in ("call:offer", "call:answer", "call:ice-candidate", "call:end"):
+            elif mtype in ("call:offer", "call:answer", "call:ice-candidate", "call:end", "call:reject"):
+                # Save Missed Call to Database if rejected or ended early
+                if mtype == "call:reject" or (mtype == "call:end" and msg.get("is_missed")):
+                    db: Session = SessionLocal()
+                    try:
+                        call_content = f"Missed {msg.get('call_type', 'audio')} call"
+                        mm = DirectMessage(
+                            sender_id=user_id,
+                            recipient_id=target_id,
+                            content=call_content,
+                        )
+                        db.add(mm)
+                        db.commit()
+                        db.refresh(mm)
+                        
+                        out_msg = {
+                            "type": "dm:new",
+                            "id": mm.id,
+                            "sender_id": user_id,
+                            "recipient_id": target_id,
+                            "content": mm.content,
+                            "media_url": None,
+                            "reply_to_id": None,
+                            "created_at": mm.created_at.isoformat()
+                        }
+                        await dm_hub.send_to_user(target_id, out_msg)
+                        await dm_hub.send_to_user(user_id, out_msg)
+                    except Exception as e:
+                        print(f"[DB ERROR missed call] {e}")
+                    finally:
+                        db.close()
+
                 await dm_hub.send_to_user(target_id, {
                     **msg,
                     "sender_id": user_id
