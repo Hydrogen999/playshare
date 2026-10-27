@@ -46,6 +46,7 @@ class DirectMessage(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     media_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reply_to_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    reply_to_status_id: Mapped[str | None] = mapped_column(String(36), nullable=True) # <-- MUST BE HERE
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
@@ -75,3 +76,13 @@ class Status(Base):
     media_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# --- THIS WAS MISSING ---
+class StatusView(Base):
+    __tablename__ = "status_views"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    status_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    viewer_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
