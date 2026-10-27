@@ -132,7 +132,7 @@ def list_public_rooms(
         db.query(Room)
         .filter(
             Room.is_public.is_(True),
-            Room.status == "waiting",
+            Room.status.in_(["waiting", "playing"]),
         )
         .order_by(Room.created_at.desc())
         .limit(30)
