@@ -5,7 +5,8 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstr
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
-
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 def _uuid() -> str:
     return str(uuid.uuid4())
@@ -42,15 +43,28 @@ class DirectMessage(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     sender_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
-    recipient_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    recipient_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True) # <-- Can be null now
+    group_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True) # <-- NEW
     content: Mapped[str] = mapped_column(Text, nullable=False)
     media_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reply_to_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    reply_to_status_id: Mapped[str | None] = mapped_column(String(36), nullable=True) # <-- MUST BE HERE
+    reply_to_status_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_now, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+# --- ADD THESE NEW CLASSES AT THE BOTTOM ---
+class ChatGroup(Base):
+    __tablename__ = "chat_groups"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    creator_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+class ChatGroupMember(Base):
+    __tablename__ = "chat_group_members"
+    group_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
 
 
 class Notification(Base):
@@ -77,11 +91,14 @@ class Status(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
+    # Update DirectMessage:
+    reply_to_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    reply_to_status_id: Mapped[str | None] = mapped_column(String(36), nullable=True) # NEW
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-# --- THIS WAS MISSING ---
+# Add at the bottom:
 class StatusView(Base):
     __tablename__ = "status_views"
-
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     status_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
     viewer_id: Mapped[str] = mapped_column(String(36), nullable=False)
