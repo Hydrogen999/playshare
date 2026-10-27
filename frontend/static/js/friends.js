@@ -20,7 +20,7 @@ const STUN_SERVER = "stun:stun.l.google.com:19302";
 let typingTimeout = null;
 
 // ---------------------------------------------------------
-// 1. WEBSOCKET CONNECTION FOR CHAT
+// 1. WEBSOCKET CONNECTION FOR CHAT & CALLS
 // ---------------------------------------------------------
 function connectDMSocket() {
   if (reconnectTimeout) clearTimeout(reconnectTimeout);
@@ -31,7 +31,6 @@ function connectDMSocket() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const url = `${proto}//${location.host}/ws/dm?token=${encodeURIComponent(token)}`;
 
-  // Prevent ghost sockets
   if (dmSocket) {
     dmSocket.onclose = null;
     dmSocket.close();
@@ -76,18 +75,10 @@ function connectDMSocket() {
         });
       }
     }
-    else if (msg.type === "call:offer") {
-      showIncomingCall(msg.sender_id, msg.offer);
-    }
-    else if (msg.type === "call:answer") {
-      if (pc) pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
-    }
-    else if (msg.type === "call:ice-candidate") {
-      if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-    }
-    else if (msg.type === "call:end") {
-      endCall();
-    }
+    else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer);
+    else if (msg.type === "call:answer") { if (pc) pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); }
+    else if (msg.type === "call:ice-candidate") { if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); }
+    else if (msg.type === "call:end") endCall();
   });
 
   dmSocket.addEventListener("close", () => {
@@ -98,7 +89,7 @@ function connectDMSocket() {
 }
 
 // ---------------------------------------------------------
-// 2. UI RENDERING & NAVIGATION
+// 2. UI RENDERING
 // ---------------------------------------------------------
 function timeAgo(iso) {
   if (!iso) return "";
@@ -275,7 +266,6 @@ async function openChat(userId, username, avatarId, isPremium) {
   }
 
   $("chatInput").focus();
-  
   $("startAudioCallBtn").onclick = () => initiateCall(userId, false);
   $("startVideoCallBtn").onclick = () => initiateCall(userId, true);
 }
@@ -338,13 +328,7 @@ $("chatForm").addEventListener("submit", async (e) => {
   }
 
   $("chatInput").value = "";
-  
-  dmSocket.send(JSON.stringify({
-    type: "dm:send",
-    target_id: activeChatUserId,
-    content: text
-  }));
-
+  dmSocket.send(JSON.stringify({ type: "dm:send", target_id: activeChatUserId, content: text }));
   dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: activeChatUserId, is_typing: false }));
 });
 
@@ -377,7 +361,6 @@ async function initiateCall(targetId, isVideo) {
     $("localVideo").srcObject = localStream;
 
     pc = new RTCPeerConnection({ iceServers: [{ urls: STUN_SERVER }] });
-    
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
     
     pc.ontrack = (event) => {
@@ -419,9 +402,7 @@ function showIncomingCall(senderId, offer) {
   document.body.appendChild(modal);
 
   $("rejectCallBtn").onclick = () => {
-    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-        dmSocket.send(JSON.stringify({ type: "call:end", target_id: senderId }));
-    }
+    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:end", target_id: senderId }));
     modal.remove();
   };
 
@@ -469,20 +450,170 @@ function endCall() {
   if (pc) { pc.close(); pc = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   if (remoteStream) { remoteStream = null; }
-  
   if (currentCallTargetId && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-    try {
-      dmSocket.send(JSON.stringify({ type: "call:end", target_id: currentCallTargetId }));
-    } catch (e) {} // Ignore error if socket is closed
+    try { dmSocket.send(JSON.stringify({ type: "call:end", target_id: currentCallTargetId })); } catch (e) {}
   }
-  
   const overlay = $("videoCallOverlay");
   if (overlay) overlay.classList.remove("active");
   currentCallTargetId = null;
 }
 
 // ---------------------------------------------------------
-// 5. BOOT
+// 5. STATUS / STORIES (RESTORED)
+// ---------------------------------------------------------
+async function renderStories() {
+  let bar = $("storyBar");
+  if (!bar) {
+    const listPanel = $("listPanel");
+    const searchDiv = listPanel.querySelector(".p-3.border-b");
+    if (searchDiv) {
+      bar = document.createElement("div");
+      bar.id = "storyBar";
+      bar.className = "flex gap-3 overflow-x-auto p-3 border-b border-slate-800 scrollbar-hide";
+      searchDiv.after(bar);
+    }
+  }
+  if (!bar) return;
+
+  try { statuses = await api.request("/api/v1/friends/status/feed"); } catch (e) { statuses = []; }
+
+  const grouped = {};
+  statuses.forEach(s => {
+    if (!grouped[s.user_id]) grouped[s.user_id] = { ...s, items: [] };
+    grouped[s.user_id].items.push(s);
+  });
+
+  let html = `
+    <div class="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer" id="addStatusBtn">
+      <div class="w-14 h-14 rounded-full border-2 border-slate-700 bg-slate-800 flex items-center justify-center text-xl text-slate-400 hover:border-brand-500 transition">+</div>
+      <div class="text-[10px] text-slate-400 font-bold">Add</div>
+    </div>
+  `;
+
+  Object.values(grouped).forEach(group => {
+    const isSelf = group.relation === "self";
+    const ringClass = isSelf ? "border-slate-500" : "border-brand-500";
+    html += `
+      <div class="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer view-status-btn" data-group='${JSON.stringify(group)}'>
+        <div class="w-14 h-14 rounded-full border-2 ${ringClass} p-0.5">${avatarHTML(group.avatar_id, "md")}</div>
+        <div class="text-[10px] text-slate-300 font-bold truncate w-14 text-center">${isSelf ? "You" : escapeHTML(group.username)}</div>
+      </div>
+    `;
+  });
+
+  bar.innerHTML = html;
+
+  bar.querySelectorAll(".view-status-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const group = JSON.parse(btn.dataset.group);
+      showStatusSlideshow(group.items);
+    });
+  });
+
+  $("addStatusBtn").addEventListener("click", showCreateStatusModal);
+}
+
+function showStatusSlideshow(items) {
+  let currentIndex = 0;
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center";
+  
+  function renderSlide() {
+    const status = items[currentIndex];
+    let mediaHTML = "";
+    if (status.media_url) {
+      if (status.media_url.match(/\.(mp4|webm|ogg|mov)$/i)) {
+        mediaHTML = `<video src="${status.media_url}" controls autoplay class="w-full h-full object-contain"></video>`;
+      } else {
+        mediaHTML = `<img src="${status.media_url}" class="w-full h-full object-contain" />`;
+      }
+    }
+
+    overlay.innerHTML = `
+      <div class="w-full max-w-sm h-full sm:h-[80vh] sm:rounded-2xl bg-slate-900 relative overflow-hidden flex flex-col">
+        <div class="absolute top-4 left-4 right-4 flex gap-1 z-20">
+          ${items.map((_, i) => `<div class="h-1 flex-1 bg-white/30 rounded-full overflow-hidden"><div class="h-full bg-white transition-all duration-3000 ${i === currentIndex ? 'w-full' : i < currentIndex ? 'w-full' : 'w-0'}"></div></div>`).join("")}
+        </div>
+        <div class="p-4 pt-10 flex items-center gap-2 z-20 bg-gradient-to-b from-black/80 to-transparent absolute top-0 left-0 right-0">
+          ${avatarHTML(status.avatar_id, "sm")}
+          <div class="text-sm font-bold text-white">${status.relation === "self" ? "Your Story" : escapeHTML(status.username)}</div>
+          <div class="ml-auto text-xs text-slate-300">${timeAgo(status.created_at)}</div>
+          <button id="closeStoryBtn" class="ml-2 text-white text-xl">✕</button>
+        </div>
+        <div class="flex-1 relative flex items-center justify-center bg-black">
+          ${mediaHTML}
+          ${status.content ? `<div class="absolute bottom-10 left-4 right-4 text-center text-white text-lg font-bold p-4 bg-black/50 rounded-xl backdrop-blur">${escapeHTML(status.content)}</div>` : ""}
+        </div>
+        <div id="tapLeft" class="absolute top-0 bottom-0 left-0 w-1/3 z-10 cursor-pointer"></div>
+        <div id="tapRight" class="absolute top-0 bottom-0 right-0 w-2/3 z-10 cursor-pointer"></div>
+      </div>
+    `;
+
+    overlay.querySelector("#closeStoryBtn").addEventListener("click", () => overlay.remove());
+    overlay.querySelector("#tapLeft").addEventListener("click", () => { if (currentIndex > 0) { currentIndex--; renderSlide(); } });
+    overlay.querySelector("#tapRight").addEventListener("click", () => {
+      if (currentIndex < items.length - 1) { currentIndex++; renderSlide(); }
+      else { overlay.remove(); }
+    });
+
+    if (overlay._timeout) clearTimeout(overlay._timeout);
+    overlay._timeout = setTimeout(() => {
+       if (currentIndex < items.length - 1) { currentIndex++; renderSlide(); }
+       else { overlay.remove(); }
+    }, 5000);
+  }
+
+  renderSlide();
+  document.body.appendChild(overlay);
+}
+
+function showCreateStatusModal() {
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
+  overlay.innerHTML = `
+    <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl">
+      <h3 class="text-white font-bold text-lg mb-4">Create Status</h3>
+      <textarea id="statusText" rows="3" placeholder="What's on your mind?" class="w-full bg-slate-800 text-white rounded-lg p-3 text-sm focus:outline-none border border-slate-700 mb-3"></textarea>
+      <label class="flex items-center gap-2 bg-slate-800 text-slate-300 border border-slate-700 rounded-lg p-3 cursor-pointer hover:bg-slate-700 mb-4">
+        <span class="text-xl">📸</span><span class="text-sm font-bold" id="fileLabel">Add Image/Video</span>
+        <input type="file" id="statusMedia" accept="image/*,video/*" class="hidden" />
+      </label>
+      <div class="flex gap-2">
+        <button id="cancelStatusBtn" class="flex-1 py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
+        <button id="postStatusBtn" class="flex-1 py-2.5 rounded-lg bg-brand-600 text-white font-bold text-sm">Post</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const fileInput = overlay.querySelector("#statusMedia");
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files.length > 0) {
+      overlay.querySelector("#fileLabel").textContent = fileInput.files[0].name;
+      overlay.querySelector("#fileLabel").classList.add("text-brand-400");
+    }
+  });
+
+  overlay.querySelector("#cancelStatusBtn").addEventListener("click", () => overlay.remove());
+  overlay.querySelector("#postStatusBtn").addEventListener("click", async () => {
+    const text = overlay.querySelector("#statusText").value.trim();
+    const file = fileInput.files[0];
+    if (!text && !file) return alert("Add text or media");
+    const formData = new FormData();
+    if (text) formData.append("content", text);
+    if (file) formData.append("media", file);
+    try {
+      const token = localStorage.getItem("ps_token");
+      const res = await fetch("/api/v1/friends/status", { method: "POST", headers: { "Authorization": "Bearer " + token }, body: formData });
+      if (!res.ok) throw new Error("Failed to post");
+      overlay.remove();
+      await renderStories();
+    } catch (e) { alert("Error posting status"); }
+  });
+}
+
+// ---------------------------------------------------------
+// 6. BOOT
 // ---------------------------------------------------------
 async function refreshAll() {
   try {
@@ -501,9 +632,11 @@ async function boot() {
 
   await refreshAll();
   renderList();
+  await renderStories(); // <-- Restored!
 
   pollTimer = setInterval(async () => {
     await refreshAll();
+    await renderStories(); // <-- Restored!
     if (!$("searchInput").value.trim()) renderList();
   }, 10000);
 }
