@@ -72,6 +72,8 @@ class DMOut(BaseModel):
     recipient_id: str
     content: str
     media_url: str | None = None
-    reply_to_id: str | None = None # <-- MUST BE HERE
+    reply_to_id: str | None = None
+    reply_to_status_id: str | None = None # <-- NEW
     read: bool
     created_at: str
+
