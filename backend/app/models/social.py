@@ -29,8 +29,12 @@ class Friendship(Base):
     streak_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_streak_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now, nullable=False
+    )
 
 
 class DirectMessage(Base):
@@ -40,11 +44,14 @@ class DirectMessage(Base):
     sender_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
     recipient_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    media_url: Mapped[str | None] = mapped_column(String(255), nullable=True) # NEW
+    media_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reply_to_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
 
-    
+
 class Notification(Base):
     __tablename__ = "notifications"
 
@@ -53,7 +60,9 @@ class Notification(Base):
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     payload: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
 
 
 class Status(Base):
@@ -63,6 +72,6 @@ class Status(Base):
     user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     game_invite: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    media_url: Mapped[str | None] = mapped_column(String(255), nullable=True) # NEW
+    media_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
