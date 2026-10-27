@@ -32,6 +32,10 @@
     #chatPanel { position: relative; }
     #mobileBack { display: none; }
   }
+  #chatPanel { z-index: 50; } /* Ensure video calls overlay correctly */
+.incoming-call-modal { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 100; }
+.video-overlay { position: fixed; inset: 0; z-index: 90; background: #000; display: none; flex-direction: column; }
+.video-overlay.active { display: flex; }
 </style>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
