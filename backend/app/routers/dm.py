@@ -12,17 +12,19 @@ from app.deps import get_current_user
 from app.models.social import DirectMessage, Notification, Friendship
 from app.models.user import User
 from app.schemas.social import ConversationOut, DMOut, SendDMIn
+from app.services.premium import premium_bulk
 
 router = APIRouter(prefix="/api/v1/dm", tags=["dm"])
 
+# --- Set up upload directory safely ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 UPLOAD_DIR = os.path.join(BASE_DIR, "frontend", "static", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+
 def _is_premium(db: Session, user_id: str) -> bool:
-    # Simple check if premium based on your existing system (you might have a better way)
-    from app.services.premium import premium_bulk
     return premium_bulk(db, [user_id]).get(user_id, False)
+
 
 def _update_streak(db: Session, me_id: str, other_id: str):
     f = db.query(Friendship).filter(
@@ -36,7 +38,6 @@ def _update_streak(db: Session, me_id: str, other_id: str):
         return
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    
     if f.last_streak_date == today:
         return
 
@@ -48,16 +49,15 @@ def _update_streak(db: Session, me_id: str, other_id: str):
         if delta == 1:
             f.streak_count += 1
         elif delta >= 5:
-            f.streak_count = 1 # Expired, starts back at 1
+            f.streak_count = 1 
         elif delta >= 2:
-            # It's in restore period (2-4 days). Don't increment yet, 
-            # the frontend will prompt them to restore. If they chat, we reset it to 1 for now.
             f.streak_count = 1
     else:
         f.streak_count = 1
 
     f.last_streak_date = today
     db.commit()
+
 
 @router.post("/streak/{friend_id}/restore")
 def restore_streak(friend_id: str, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -75,6 +75,7 @@ def restore_streak(friend_id: str, me: User = Depends(get_current_user), db: Ses
     f.last_streak_date = today
     db.commit()
     return {"ok": True, "streak_count": f.streak_count}
+
 
 @router.get("", response_model=list[ConversationOut])
 def list_conversations(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -117,6 +118,33 @@ def list_conversations(me: User = Depends(get_current_user), db: Session = Depen
         ))
     return convos
 
+
+# --- CRITICAL: PUT /upload BEFORE /{user_id} ---
+@router.post("/upload")
+async def upload_chat_media(
+    file: UploadFile = File(...),
+    me: User = Depends(get_current_user),
+):
+    # 1. Basic validation
+    if not file.content_type or not file.content_type.startswith(("image/", "audio/", "video/")):
+        raise HTTPException(status_code=400, detail="Invalid file type")
+    
+    # 2. Generate a safe, unique filename
+    ext = file.filename.split(".")[-1] if file.filename else "bin"
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    
+    # 3. Save the file
+    try:
+        with open(filepath, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        print(f"[UPLOAD ERROR] {e}")
+        raise HTTPException(status_code=500, detail="Could not save file")
+        
+    return {"url": f"/static/uploads/{filename}"}
+
+
 @router.get("/{user_id}", response_model=list[DMOut])
 def get_conversation(user_id: str, limit: int = 100, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     # CHAT AUTO-CLEAR LOGIC
@@ -155,6 +183,7 @@ def get_conversation(user_id: str, limit: int = 100, me: User = Depends(get_curr
         )
         for m in rows
     ]
+
 
 @router.post("/{user_id}", response_model=DMOut)
 def send_dm(
@@ -205,27 +234,3 @@ def send_dm(
         content=m.content, media_url=m.media_url, read=False,
         created_at=m.created_at.isoformat(),
     )
-    # Add these imports at the top of dm.py if they aren't there:
-import os
-import shutil
-import uuid
-from fastapi import UploadFile, File
-
-# Add this route at the bottom of dm.py:
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-UPLOAD_DIR = os.path.join(BASE_DIR, "frontend", "static", "uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-@router.post("/upload")
-def upload_dm_media(
-    file: UploadFile = File(...),
-    me: User = Depends(get_current_user)
-):
-    ext = file.filename.split(".")[-1]
-    filename = f"dm_{uuid.uuid4().hex}.{ext}"
-    filepath = os.path.join(UPLOAD_DIR, filename)
-    
-    with open(filepath, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    return {"url": f"/static/uploads/{filename}"}
