@@ -14,13 +14,14 @@ let pc = null;
 let localStream = null;
 let remoteStream = null;
 let currentCallTargetId = null;
+let callTimeout = null; // <-- NEW: Timeout for calls
 const STUN_SERVER = "stun:stun.l.google.com:19302";
 
 // --- Typing Timeout ---
 let typingTimeout = null;
 
 // ---------------------------------------------------------
-// 1. WEBSOCKET CONNECTION FOR CHAT & CALLS
+// 1. WEBSOCKET CONNECTION
 // ---------------------------------------------------------
 function connectDMSocket() {
   if (reconnectTimeout) clearTimeout(reconnectTimeout);
@@ -76,7 +77,12 @@ function connectDMSocket() {
       }
     }
     else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer);
-    else if (msg.type === "call:answer") { if (pc) pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); }
+    else if (msg.type === "call:answer") { 
+        if (pc) {
+            clearTimeout(callTimeout); // Stop the timeout if they answer!
+            pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+        }
+    }
     else if (msg.type === "call:ice-candidate") { if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); }
     else if (msg.type === "call:end") endCall();
   });
@@ -290,6 +296,11 @@ function addMessageToUI(m) {
   const wrap = document.createElement("div");
   wrap.className = mine ? "flex flex-col items-end mb-2" : "flex flex-col items-start mb-2";
   
+  let replyHtml = "";
+  if (m.reply_to_status_id) {
+      replyHtml = `<div class="text-[10px] text-brand-400 mb-1 px-2 border-l-2 border-brand-500">Replied to a status</div>`;
+  }
+
   let contentHtml = m.content ? `<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>` : "";
   let mediaHtml = m.media_url ? `<img src="${m.media_url}" class="max-w-[200px] rounded-xl mt-1 border border-slate-700" />` : "";
   let statusHtml = mine ? `<div class="text-[10px] text-slate-500 mt-0.5"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> · ${timeAgo(m.created_at)}</div>` : `<div class="text-[10px] text-slate-500 mt-0.5">${timeAgo(m.created_at)}</div>`;
@@ -301,7 +312,7 @@ function addMessageToUI(m) {
     }, 10);
   }
 
-  wrap.innerHTML = `${contentHtml}${mediaHtml}${statusHtml}`;
+  wrap.innerHTML = `${replyHtml}${contentHtml}${mediaHtml}${statusHtml}`;
   el.appendChild(wrap);
   el.scrollTop = el.scrollHeight;
 }
@@ -343,7 +354,7 @@ function createVideoOverlay() {
   overlay.innerHTML = `
     <video id="remoteVideo" autoplay playsinline class="flex-1 object-cover"></video>
     <video id="localVideo" autoplay playsinline muted class="absolute bottom-4 right-4 w-32 h-48 object-cover rounded-xl border-2 border-slate-700 shadow-2xl z-10"></video>
-    <div class="absolute top-4 left-4 text-white font-bold p-2 bg-black/50 rounded-lg z-10" id="callStatus">Connected</div>
+    <div class="absolute top-4 left-4 text-white font-bold p-2 bg-black/50 rounded-lg z-10" id="callStatus">Calling...</div>
     <button id="endCallBtn" class="absolute bottom-6 left-1/2 -translate-x-1/2 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-full font-bold shadow-lg z-10">End Call</button>
   `;
   document.body.appendChild(overlay);
@@ -356,6 +367,15 @@ async function initiateCall(targetId, isVideo) {
     $("videoCallOverlay").classList.add("active");
     $("callStatus").textContent = "Calling...";
     currentCallTargetId = targetId;
+
+    // --- ADDED TIMEOUT: If no answer in 30 seconds, cancel ---
+    clearTimeout(callTimeout);
+    callTimeout = setTimeout(() => {
+        if (currentCallTargetId) {
+            alert("Call timed out. User is offline or didn't answer.");
+            endCall();
+        }
+    }, 30000);
 
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
     $("localVideo").srcObject = localStream;
@@ -411,6 +431,7 @@ function showIncomingCall(senderId, offer) {
     currentCallTargetId = senderId;
     createVideoOverlay();
     $("videoCallOverlay").classList.add("active");
+    $("callStatus").textContent = "Connecting...";
 
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
@@ -447,6 +468,7 @@ function showIncomingCall(senderId, offer) {
 }
 
 function endCall() {
+  clearTimeout(callTimeout); // Clear the timeout!
   if (pc) { pc.close(); pc = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   if (remoteStream) { remoteStream = null; }
@@ -459,7 +481,7 @@ function endCall() {
 }
 
 // ---------------------------------------------------------
-// 5. STATUS / STORIES (RESTORED)
+// 5. STATUS / STORIES
 // ---------------------------------------------------------
 async function renderStories() {
   let bar = $("storyBar");
@@ -520,6 +542,10 @@ function showStatusSlideshow(items) {
   
   function renderSlide() {
     const status = items[currentIndex];
+    
+    // Mark as viewed
+    api.request(`/api/v1/friends/status/${status.id}/view`, { method: "POST" }).catch(() => {});
+
     let mediaHTML = "";
     if (status.media_url) {
       if (status.media_url.match(/\.(mp4|webm|ogg|mov)$/i)) {
@@ -527,6 +553,12 @@ function showStatusSlideshow(items) {
       } else {
         mediaHTML = `<img src="${status.media_url}" class="w-full h-full object-contain" />`;
       }
+    }
+
+    // If it's my own status, show the view count
+    let viewCountHtml = "";
+    if (status.relation === "self" && status.viewers) {
+        viewCountHtml = `<div class="text-xs text-slate-300 mt-1">👁️ ${status.viewers.length} views</div>`;
     }
 
     overlay.innerHTML = `
@@ -543,9 +575,17 @@ function showStatusSlideshow(items) {
         <div class="flex-1 relative flex items-center justify-center bg-black">
           ${mediaHTML}
           ${status.content ? `<div class="absolute bottom-10 left-4 right-4 text-center text-white text-lg font-bold p-4 bg-black/50 rounded-xl backdrop-blur">${escapeHTML(status.content)}</div>` : ""}
+          ${viewCountHtml}
         </div>
         <div id="tapLeft" class="absolute top-0 bottom-0 left-0 w-1/3 z-10 cursor-pointer"></div>
         <div id="tapRight" class="absolute top-0 bottom-0 right-0 w-2/3 z-10 cursor-pointer"></div>
+
+        <!-- Reply Input Box (Only if not my status) -->
+        ${!status.relation === "self" ? "" : `
+        <div class="absolute bottom-4 left-4 right-4 z-20">
+            <input type="text" id="statusReplyInput" placeholder="Reply to story..." class="w-full bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-full px-4 py-2 text-sm focus:outline-none" />
+        </div>
+        `}
       </div>
     `;
 
@@ -555,6 +595,29 @@ function showStatusSlideshow(items) {
       if (currentIndex < items.length - 1) { currentIndex++; renderSlide(); }
       else { overlay.remove(); }
     });
+
+    // Handle Reply
+    const replyInput = overlay.querySelector("#statusReplyInput");
+    if (replyInput) {
+        replyInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                const val = replyInput.value.trim();
+                if (!val) return;
+                if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+                    dmSocket.send(JSON.stringify({ 
+                        type: "dm:send", 
+                        target_id: status.user_id, 
+                        content: val,
+                        reply_to_status_id: status.id
+                    }));
+                    alert("Reply sent!");
+                    replyInput.value = "";
+                    overlay.remove();
+                }
+            }
+        });
+    }
 
     if (overlay._timeout) clearTimeout(overlay._timeout);
     overlay._timeout = setTimeout(() => {
@@ -632,13 +695,13 @@ async function boot() {
 
   await refreshAll();
   renderList();
-  await renderStories(); // <-- Restored!
+  await renderStories();
 
   pollTimer = setInterval(async () => {
     await refreshAll();
-    await renderStories(); // <-- Restored!
+    await renderStories();
     if (!$("searchInput").value.trim()) renderList();
   }, 10000);
 }
 
-boot();
+boot();v
