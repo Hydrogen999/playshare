@@ -65,6 +65,10 @@ async function loadSettings() {
       $("chatRetention").disabled = true;
       $("chatRetention").classList.add("opacity-50", "cursor-not-allowed");
       $("premiumNote").classList.remove("hidden");
+    } else {
+      $("chatRetention").disabled = false;
+      $("chatRetention").classList.remove("opacity-50", "cursor-not-allowed");
+      $("premiumNote").classList.add("hidden");
     }
 
   } catch (err) {
@@ -91,17 +95,18 @@ $("saveBtn").addEventListener("click", async () => {
     on_tournament: $("on_tournament").checked,
     on_achievement: $("on_achievement").checked,
   };
-  
-  if (isPremium) {
-    payload.chat_retention_days = parseInt($("chatRetention").value, 10);
-  }
 
   try {
+    // 1. Save Push Settings
     await api.updatePushSettings(payload);
-    if (isPremium) {
-      await api.updateProfile({ chat_retention_days: payload.chat_retention_days });
-    }
     setPushPrefs(payload);
+
+    // 2. Save Premium Chat Settings
+    if (isPremium) {
+      const retention = parseInt($("chatRetention").value, 10);
+      await api.updateProfile({ chat_retention_days: retention });
+    }
+
     showMsg("Saved! ✓");
   } catch (err) {
     showMsg(err.message, "error");
