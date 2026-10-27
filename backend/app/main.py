@@ -6,12 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.ws import lobby as ws_lobby
-from app.ws import room as ws_room
-from app.ws import dm as ws_dm
-
-app.include_router(ws_dm.router) 
-
 from app import models  # noqa: F401
 from app.config import settings
 from app.database import Base, SessionLocal, engine
@@ -24,6 +18,7 @@ from app.routers import (
 from app.services.ledger import bootstrap_ledger
 from app.ws import lobby as ws_lobby
 from app.ws import room as ws_room
+from app.ws import dm as ws_dm  # <-- Imported correctly here
 
 Base.metadata.create_all(bind=engine)
 
@@ -56,6 +51,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- API ROUTERS ---
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(me.router)
@@ -80,8 +76,11 @@ app.include_router(payments.router)
 app.include_router(ads.router)
 app.include_router(push.router)
 app.include_router(chess.router)
+
+# --- WEBSOCKET ROUTERS ---
 app.include_router(ws_lobby.router)
 app.include_router(ws_room.router)
+app.include_router(ws_dm.router)  # <-- Added correctly at the bottom
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 STATIC_DIR = FRONTEND_DIR / "static"
@@ -143,9 +142,11 @@ def lobby_page():
 def room_page():
     return _serve("room.html")
 
+
 @app.get("/user")
 def user_page():
     return _serve("user.html")
+
 
 @app.get("/friends")
 def friends_page():
