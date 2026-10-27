@@ -237,6 +237,14 @@ def refund_page():
 def admin_ads_page():
     return _serve("admin-ads.html")
 
+from app.routers import (
+    # ... existing ...
+    groups, # <-- Add this
+)
+
+# ... later ...
+app.include_router(groups.router) # <-- Add this
+
 
 @app.get("/join")
 def join_page():
