@@ -56,7 +56,7 @@ function connectDMSocket() {
     if (activeChatUserId) dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: activeChatUserId }));
   });
 
-  dmSocket.addEventListener("message", (ev) => {
+  dmSocket.addEventListener("message", async (ev) => {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
 
     if (msg.type === "dm:new") {
@@ -69,6 +69,20 @@ function connectDMSocket() {
     else if (msg.type === "group:new") {
       if (activeGroupId && String(activeGroupId) === String(msg.group_id)) addMessageToUI(msg);
       refreshAll();
+    }
+    // --- NEW: GROUP CREATED EVENT ---
+    else if (msg.type === "group:created") {
+      await refreshAll(); // Fetch the updated groups list
+      
+      if (activeTab === "groups") renderList();
+      
+      // Show a nice toast notification
+      const toast = document.createElement("div");
+      toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-brand-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold animate-bounce cursor-pointer flex items-center gap-2";
+      toast.innerHTML = `👥 You were added to "<b>${escapeHTML(msg.group.name)}</b>"`;
+      toast.onclick = () => { setActiveTab("groups"); renderList(); toast.remove(); };
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 5000);
     }
     else if (msg.type === "dm:typing") {
       if (activeChatUserId === msg.sender_id) {
@@ -999,19 +1013,24 @@ function showCreateStatusModal() {
 // 6. BOOT
 // ---------------------------------------------------------
 async function refreshAll() {
-  try {
-    const results = await Promise.all([
-      api.listFriends(),
-      api.listFriendRequests(),
-      api.listConversations(),
-      api.request("/api/v1/groups")
-    ]);
-    friends = results[0]; requests = results[1]; conversations = results[2]; groups = results[3];
+  // Each request is independent: if one fails (e.g. /groups not built yet),
+  // the others still load, so friends, requests and chats always show.
+  const [f, r, c, g] = await Promise.allSettled([
+    api.listFriends(),
+    api.listFriendRequests(),
+    api.listConversations(),
+    api.request("/api/v1/groups")
+  ]);
+  if (f.status === "fulfilled") friends = f.value; else console.error("friends:", f.reason);
+  if (r.status === "fulfilled") requests = r.value; else console.error("requests:", r.reason);
+  if (c.status === "fulfilled") conversations = c.value; else console.error("conversations:", c.reason);
+  if (g.status === "fulfilled") groups = g.value; else { groups = []; console.warn("groups:", g.reason); }
 
-    const badge = $("reqBadge");
+  const badge = $("reqBadge");
+  if (badge) {
     if (requests.length > 0) { badge.textContent = String(requests.length); badge.classList.remove("hidden"); }
     else { badge.classList.add("hidden"); }
-  } catch (err) { console.error(err); }
+  }
 }
 
 async function boot() {
