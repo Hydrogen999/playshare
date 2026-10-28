@@ -438,7 +438,7 @@ $("chatImageInput").addEventListener("change", async (e) => {
 });
 
 // --- CREATE GROUP MODAL LOGIC ---
-$("createGroupBtn").addEventListener("click", () => {
+$("createGroupBtn")?.addEventListener("click", () => {
   if (friends.length === 0) return alert("Add friends first to create a group.");
 
   const modal = document.createElement("div");
