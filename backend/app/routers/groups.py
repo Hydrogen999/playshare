@@ -9,6 +9,7 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
 from app.models.social import ChatGroup, ChatGroupMember, DirectMessage
+from app.ws.dm import dm_hub  # <-- Import the hub to send live updates!
 
 router = APIRouter(prefix="/api/v1/groups", tags=["groups"])
 
@@ -17,22 +18,47 @@ class GroupCreateIn(BaseModel):
     member_ids: List[str]
 
 @router.post("")
-def create_group(data: GroupCreateIn, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def create_group(data: GroupCreateIn, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if len(data.name) < 3:
         raise HTTPException(400, "Group name too short")
     
+    # 1. Create the group
     group = ChatGroup(id=str(uuid.uuid4()), name=data.name, creator_id=me.id)
     db.add(group)
-    
-    # Add creator
     db.add(ChatGroupMember(group_id=group.id, user_id=me.id))
     
-    # Add members
     for uid in data.member_ids:
         if uid != me.id:
             db.add(ChatGroupMember(group_id=group.id, user_id=uid))
             
+    db.flush() # Flush to get the group ID before committing
+
+    # 2. Create a system message so the chat isn't empty
+    sys_msg = DirectMessage(
+        group_id=group.id,
+        sender_id=me.id,
+        content=f"{me.username} created the group and added you."
+    )
+    db.add(sys_msg)
     db.commit()
+
+    # 3. NOTIFY EVERYONE VIA WEBSOCKET
+    # This tells the frontend "Update your Groups list immediately!"
+    notify_payload = {
+        "type": "group:created",
+        "group": {
+            "id": group.id,
+            "name": group.name,
+            "member_count": len(data.member_ids) + 1,
+            "creator_id": me.id
+        }
+    }
+    
+    # Send to me + all members
+    all_members = [me.id] + data.member_ids
+    for uid in all_members:
+        await dm_hub.send_to_user(uid, notify_payload)
+
     return {"id": group.id, "name": group.name}
 
 @router.get("")
@@ -53,10 +79,8 @@ def list_groups(me: User = Depends(get_current_user), db: Session = Depends(get_
         })
     return out
 
-# --- THIS IS THE MISSING ENDPOINT ---
 @router.get("/{group_id}/messages")
 def get_group_messages(group_id: str, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # 1. Check if user is a member of this group
     member = db.query(ChatGroupMember).filter(
         ChatGroupMember.group_id == group_id,
         ChatGroupMember.user_id == me.id
@@ -64,12 +88,10 @@ def get_group_messages(group_id: str, me: User = Depends(get_current_user), db: 
     if not member:
         raise HTTPException(403, "You are not a member of this group")
 
-    # 2. Fetch messages
     messages = db.query(DirectMessage).filter(
         DirectMessage.group_id == group_id
     ).order_by(DirectMessage.created_at.asc()).limit(100).all()
 
-    # 3. Format output
     out = []
     for m in messages:
         sender = db.get(User, m.sender_id)
