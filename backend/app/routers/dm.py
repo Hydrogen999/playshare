@@ -16,15 +16,12 @@ from app.services.premium import premium_bulk
 
 router = APIRouter(prefix="/api/v1/dm", tags=["dm"])
 
-# --- Set up upload directory safely ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 UPLOAD_DIR = os.path.join(BASE_DIR, "frontend", "static", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-
 def _is_premium(db: Session, user_id: str) -> bool:
     return premium_bulk(db, [user_id]).get(user_id, False)
-
 
 def _update_streak(db: Session, me_id: str, other_id: str):
     f = db.query(Friendship).filter(
@@ -58,7 +55,6 @@ def _update_streak(db: Session, me_id: str, other_id: str):
     f.last_streak_date = today
     db.commit()
 
-
 @router.post("/streak/{friend_id}/restore")
 def restore_streak(friend_id: str, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     f = db.query(Friendship).filter(
@@ -76,12 +72,15 @@ def restore_streak(friend_id: str, me: User = Depends(get_current_user), db: Ses
     db.commit()
     return {"ok": True, "streak_count": f.streak_count}
 
-
 @router.get("", response_model=list[ConversationOut])
 def list_conversations(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # --- FIX: ONLY GET DIRECT MESSAGES (group_id is null) ---
     rows = (
         db.query(DirectMessage)
-        .filter(or_(DirectMessage.sender_id == me.id, DirectMessage.recipient_id == me.id))
+        .filter(
+            or_(DirectMessage.sender_id == me.id, DirectMessage.recipient_id == me.id),
+            DirectMessage.group_id.is_(None) 
+        )
         .order_by(DirectMessage.created_at.desc())
         .all()
     )
@@ -97,7 +96,7 @@ def list_conversations(me: User = Depends(get_current_user), db: Session = Depen
 
     for m in rows:
         other = m.recipient_id if m.sender_id == me.id else m.sender_id
-        if other in seen:
+        if not other or other in seen: # Safety check
             continue
         seen.add(other)
         u = db.get(User, other)
@@ -118,23 +117,18 @@ def list_conversations(me: User = Depends(get_current_user), db: Session = Depen
         ))
     return convos
 
-
-# --- CRITICAL: PUT /upload BEFORE /{user_id} ---
 @router.post("/upload")
 async def upload_chat_media(
     file: UploadFile = File(...),
     me: User = Depends(get_current_user),
 ):
-    # 1. Basic validation
     if not file.content_type or not file.content_type.startswith(("image/", "audio/", "video/")):
         raise HTTPException(status_code=400, detail="Invalid file type")
     
-    # 2. Generate a safe, unique filename
     ext = file.filename.split(".")[-1] if file.filename else "bin"
     filename = f"{uuid.uuid4().hex}.{ext}"
     filepath = os.path.join(UPLOAD_DIR, filename)
     
-    # 3. Save the file
     try:
         with open(filepath, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -144,16 +138,15 @@ async def upload_chat_media(
         
     return {"url": f"/static/uploads/{filename}"}
 
-
 @router.get("/{user_id}", response_model=list[DMOut])
 def get_conversation(user_id: str, limit: int = 100, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # CHAT AUTO-CLEAR LOGIC
     retention = me.profile.chat_retention_days or 1
     if not _is_premium(db, me.id) and retention > 1:
-        retention = 1 # Force 1 day for non-premium
+        retention = 1
         
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention)
 
+    # --- FIX: ONLY GET DIRECT MESSAGES (group_id is null) ---
     rows = (
         db.query(DirectMessage)
         .filter(
@@ -161,7 +154,8 @@ def get_conversation(user_id: str, limit: int = 100, me: User = Depends(get_curr
                 and_(DirectMessage.sender_id == me.id, DirectMessage.recipient_id == user_id),
                 and_(DirectMessage.sender_id == user_id, DirectMessage.recipient_id == me.id),
             ),
-            DirectMessage.created_at >= cutoff # Filter by retention
+            DirectMessage.group_id.is_(None),
+            DirectMessage.created_at >= cutoff 
         )
         .order_by(DirectMessage.created_at.asc())
         .limit(min(limit, 500))
@@ -183,7 +177,6 @@ def get_conversation(user_id: str, limit: int = 100, me: User = Depends(get_curr
         )
         for m in rows
     ]
-
 
 @router.post("/{user_id}", response_model=DMOut)
 def send_dm(
