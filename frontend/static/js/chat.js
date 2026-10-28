@@ -891,17 +891,25 @@ async function renderStories() {
   let bar = $("storyBar");
   if (!bar) {
     const listPanel = $("listPanel");
-    const searchDiv = listPanel.querySelector(".p-3.border-b");
+    const searchDiv = listPanel?.querySelector(".p-3.border-b") || $("searchInput")?.parentElement;
     if (searchDiv) {
       bar = document.createElement("div");
       bar.id = "storyBar";
       bar.className = "flex gap-3 overflow-x-auto p-3 border-b border-slate-800 scrollbar-hide";
       searchDiv.after(bar);
+    } else {
+      console.error("storyBar: could not find where to place the story bar (#listPanel / #searchInput)");
     }
   }
   if (!bar) return;
 
-  try { statuses = await api.request("/api/v1/friends/status/feed"); } catch (e) { statuses = []; }
+  try {
+    const feed = await api.request("/api/v1/friends/status/feed");
+    statuses = Array.isArray(feed) ? feed : [];
+  } catch (e) {
+    console.error("status feed failed:", e);
+    statuses = [];
+  }
 
   groupedStories = {};
   statuses.forEach(s => {
@@ -1057,10 +1065,14 @@ function showCreateStatusModal() {
     if (file) formData.append("media", file);
     try {
       const res = await fetch("/api/v1/friends/status", { method: "POST", headers: { "Authorization": "Bearer " + api.getToken() }, body: formData });
-      if (!res.ok) throw new Error("Failed to post");
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        console.error("post status failed:", res.status, detail);
+        throw new Error(`${res.status} ${detail.slice(0, 200)}`);
+      }
       overlay.remove();
       await renderStories();
-    } catch (e) { alert("Error posting status"); }
+    } catch (e) { alert("Error posting status: " + e.message); }
   });
 }
 
