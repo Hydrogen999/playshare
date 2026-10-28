@@ -2,24 +2,21 @@ import json
 import os
 import shutil
 import uuid
-from sqlalchemy import func # Add this to top imports
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models.social import Friendship, Notification, Status
+from app.models.social import Friendship, Notification, Status, StatusView
 from app.models.user import User
 from app.schemas.social import FriendOut, FriendRequestOut
 from app.services.cosmetics import get_frame_styles_bulk
 from app.services.premium import premium_bulk
-from app.models.social import Friendship, Notification, Status, StatusView
 
 router = APIRouter(prefix="/api/v1/friends", tags=["friends"])
 
-# Path to save uploads (frontend/static/uploads)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 UPLOAD_DIR = os.path.join(BASE_DIR, "frontend", "static", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -177,7 +174,7 @@ def remove_friend(user_id: str, me: User = Depends(get_current_user), db: Sessio
 
 
 # ---------------------------------------------------------------------------
-# STATUS / STORIES ENDPOINTS (Updated for Media)
+# STATUS / STORIES ENDPOINTS
 # ---------------------------------------------------------------------------
 
 @router.post("/status")
@@ -188,7 +185,6 @@ def create_status(
     me: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Check daily limit (Max 20 per day)
     today = datetime.now(timezone.utc).date()
     count = db.query(Status).filter(
         Status.user_id == me.id,
@@ -198,8 +194,6 @@ def create_status(
     if count >= 20:
         raise HTTPException(400, "You can only post 20 statuses per day.")
 
-    # NO LONGER DELETING OLD STATUSES (So we can slideshow them)
-    
     media_url = None
     if media:
         ext = media.filename.split(".")[-1]
@@ -229,39 +223,17 @@ def get_status_feed(me: User = Depends(get_current_user), db: Session = Depends(
         u = db.get(User, s.user_id)
         if not u or not u.profile: continue
         
+        # Determine relation & SKIP STRANGERS
         if s.user_id == me.id:
             relation = "self"
         else:
             rel = _find_friendship(db, me.id, s.user_id)
-            relation = "friend" if rel and rel.status == "accepted" else "stranger"
+            if not rel or rel.status != "accepted":
+                continue # <--- THIS FIXES THE STRANGER ISSUE
+            relation = "friend"
 
-        out.append({
-            "id": s.id,
-            "user_id": s.user_id,
-            "username": u.username,
-            "avatar_id": u.profile.avatar_id,
-            "content": s.content,
-            "game_invite": s.game_invite,
-            "media_url": s.media_url, # Send this to frontend
-            "relation": relation,
-            "created_at": s.created_at.isoformat()
-        })
-    return out
-@router.get("/status/feed")
-def get_status_feed(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    now = datetime.now(timezone.utc)
-    statuses = db.query(Status).filter(Status.expires_at > now).all()
-    
-    out = []
-    for s in statuses:
-        u = db.get(User, s.user_id)
-        if not u or not u.profile: continue
-        
-        relation = "self" if s.user_id == me.id else ("friend" if _find_friendship(db, me.id, s.user_id) else "stranger")
-        
         viewers = []
         if s.user_id == me.id:
-            # If it's my status, fetch the list of people who viewed it
             views = db.query(StatusView).filter(StatusView.status_id == s.id).all()
             for v in views:
                 vu = db.get(User, v.viewer_id)
@@ -273,11 +245,11 @@ def get_status_feed(me: User = Depends(get_current_user), db: Session = Depends(
             "avatar_id": u.profile.avatar_id, "content": s.content,
             "game_invite": s.game_invite, "media_url": s.media_url,
             "relation": relation, "created_at": s.created_at.isoformat(),
-            "viewers": viewers # <-- NEW: Send viewers to frontend
+            "viewers": viewers
         })
     return out
 
-# 2. Add this new endpoint
+
 @router.post("/status/{status_id}/view")
 def mark_status_view(status_id: str, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     existing = db.query(StatusView).filter(StatusView.status_id == status_id, StatusView.viewer_id == me.id).first()
