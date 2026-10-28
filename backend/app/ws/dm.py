@@ -19,7 +19,10 @@ MAX_URL_LEN = 2048
 
 CALL_EVENTS = {"call:offer", "call:answer", "call:ice-candidate", "call:end", "call:reject"}
 # Only these fields are relayed for call signalling (no arbitrary client-controlled keys)
-CALL_FIELDS = ("type", "call_type", "call_id", "sdp", "candidate", "is_missed")
+CALL_FIELDS = (
+    "type", "call_type", "call_id", "sdp", "candidate", "is_missed",
+    "offer", "answer", "is_video",
+)
 
 
 # --------------------------------------------------------------------------- #
