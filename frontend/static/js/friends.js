@@ -70,13 +70,10 @@ function connectDMSocket() {
       if (activeGroupId && String(activeGroupId) === String(msg.group_id)) addMessageToUI(msg);
       refreshAll();
     }
-    // --- NEW: GROUP CREATED EVENT ---
     else if (msg.type === "group:created") {
-      await refreshAll(); // Fetch the updated groups list
-      
+      await refreshAll(); 
       if (activeTab === "groups") renderList();
       
-      // Show a nice toast notification
       const toast = document.createElement("div");
       toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-brand-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold animate-bounce cursor-pointer flex items-center gap-2";
       toast.innerHTML = `👥 You were added to "<b>${escapeHTML(msg.group.name)}</b>"`;
@@ -382,7 +379,6 @@ function addMessageToUI(m) {
 }
 
 $("chatInput").addEventListener("input", () => {
-  // Typing indicator is DM-only
   if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN || !activeChatUserId) return;
   const target = activeChatUserId;
   dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: target, is_typing: true }));
@@ -390,7 +386,6 @@ $("chatInput").addEventListener("input", () => {
   typingTimeout = setTimeout(() => { if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: target, is_typing: false })); }, 2000);
 });
 
-// --- Shared helpers: send text / media to whichever chat is open ---
 function currentTarget() {
   return { groupId: activeGroupId, userId: activeChatUserId };
 }
@@ -417,7 +412,6 @@ async function uploadMedia(file) {
   return data.url;
 }
 
-// --- SUBMIT TEXT ---
 $("chatForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("chatInput").value.trim();
@@ -436,7 +430,6 @@ $("chatForm").addEventListener("submit", async (e) => {
   }
 });
 
-// --- UPLOAD IMAGE (HTTP Upload -> WebSocket URL) ---
 $("chatImageInput").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   const target = currentTarget();
@@ -451,7 +444,6 @@ $("chatImageInput").addEventListener("change", async (e) => {
   }
 });
 
-// --- CREATE GROUP MODAL LOGIC ---
 $("createGroupBtn").addEventListener("click", () => {
   if (friends.length === 0) return alert("Add friends first to create a group.");
 
@@ -497,7 +489,6 @@ $("createGroupBtn").addEventListener("click", () => {
   };
 });
 
-// --- VOICE NOTE LOGIC (HTTP Upload -> WebSocket URL) ---
 $("voiceNoteBtn").addEventListener("click", async () => {
   if (!activeChatUserId && !activeGroupId && !isRecording) return;
 
@@ -511,11 +502,11 @@ $("voiceNoteBtn").addEventListener("click", async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
       audioChunks = [];
-      recordingTarget = currentTarget(); // lock the destination when recording starts
+      recordingTarget = currentTarget();
 
       mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
       mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop()); // release the mic
+        stream.getTracks().forEach(t => t.stop());
         const target = recordingTarget;
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
         const file = new File([audioBlob], "voice_note.webm", { type: "audio/webm" });
@@ -619,13 +610,12 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
 
         if (localStream) localStream.addTrack(videoTrack);
 
-        // Rebuild UI for video
         const name = targetName, av = targetAvatar, pr = isPremium;
         $("videoCallOverlay").remove();
         createVideoOverlay(true, name, av, pr);
         $("remoteVideo").srcObject = remoteStream;
         $("localVideo").srcObject = localStream;
-        startCallTimer(); // Resume timer
+        startCallTimer();
       } catch (e) {
         alert("Camera access denied.");
       }
@@ -688,7 +678,6 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
     callTimeout = setTimeout(() => {
       if (currentCallTargetId) {
         alert("User is offline or didn't answer.");
-        // The caller ends the call early -> backend logs a missed call from caller to callee
         if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
           dmSocket.send(JSON.stringify({ type: "call:end", target_id: targetId, call_type: isVideo ? 'video' : 'audio', is_missed: true }));
         }
@@ -784,7 +773,6 @@ function showIncomingCall(senderId, offer) {
   };
 }
 
-// --- RINGTONE ---
 let ringtoneCtx = null;
 let ringtoneInterval = null;
 
@@ -815,7 +803,7 @@ function stopRingtone() {
 function endCall() {
   clearTimeout(callTimeout); callTimeout = null;
   stopRingtone(); stopCallTimer();
-  if (incomingCallModal) { incomingCallModal.remove(); incomingCallModal = null; } // caller hung up while ringing
+  if (incomingCallModal) { incomingCallModal.remove(); incomingCallModal = null; }
   if (pc) { pc.close(); pc = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   if (remoteStream) { remoteStream = null; }
@@ -836,7 +824,8 @@ async function renderStories() {
   let bar = $("storyBar");
   if (!bar) {
     const listPanel = $("listPanel");
-    const searchDiv = listPanel.querySelector(".p-3.border-b");
+    // --- FIX: Changed to .p-4.border-b to match the search bar wrapper ---
+    const searchDiv = listPanel.querySelector(".p-4.border-b");
     if (searchDiv) {
       bar = document.createElement("div");
       bar.id = "storyBar";
@@ -938,7 +927,6 @@ function showStatusSlideshow(items) {
 
     const replyInput = overlay.querySelector("#statusReplyInput");
     if (replyInput) {
-      // Pause auto-advance while the user is typing a reply
       replyInput.addEventListener("focus", () => clearTimeout(overlay._timeout));
       replyInput.addEventListener("keypress", (e) => {
         if (e.key === "Enter") {
@@ -1013,8 +1001,6 @@ function showCreateStatusModal() {
 // 6. BOOT
 // ---------------------------------------------------------
 async function refreshAll() {
-  // Each request is independent: if one fails (e.g. /groups not built yet),
-  // the others still load, so friends, requests and chats always show.
   const [f, r, c, g] = await Promise.allSettled([
     api.listFriends(),
     api.listFriendRequests(),
