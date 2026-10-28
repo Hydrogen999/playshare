@@ -1068,19 +1068,24 @@ function showCreateStatusModal() {
 // 6. BOOT
 // ---------------------------------------------------------
 async function refreshAll() {
-  try {
-    const results = await Promise.all([
-      api.listFriends(),
-      api.listFriendRequests(),
-      api.listConversations(),
-      api.request("/api/v1/groups")
-    ]);
-    friends = results[0]; requests = results[1]; conversations = results[2]; groups = results[3];
+  // Each request is independent: if one fails (e.g. /groups not built yet),
+  // the others still load, so friends, requests and chats always show.
+  const [f, r, c, g] = await Promise.allSettled([
+    api.listFriends(),
+    api.listFriendRequests(),
+    api.listConversations(),
+    api.request("/api/v1/groups")
+  ]);
+  if (f.status === "fulfilled") friends = f.value; else console.error("friends:", f.reason);
+  if (r.status === "fulfilled") requests = r.value; else console.error("requests:", r.reason);
+  if (c.status === "fulfilled") conversations = c.value; else console.error("conversations:", c.reason);
+  if (g.status === "fulfilled") groups = g.value; else { groups = []; console.warn("groups:", g.reason); }
 
-    const badge = $("reqBadge");
+  const badge = $("reqBadge");
+  if (badge) {
     if (requests.length > 0) { badge.textContent = String(requests.length); badge.classList.remove("hidden"); }
     else { badge.classList.add("hidden"); }
-  } catch (err) { console.error(err); }
+  }
 }
 
 async function boot() {
