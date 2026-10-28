@@ -13,12 +13,11 @@ from app.security import decode_token
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-MAX_FRAME_CHARS = 64 * 1024   # reject absurdly large frames (SDP blobs are only a few KB)
+MAX_FRAME_CHARS = 64 * 1024   # reject absurdly large frames
 MAX_CONTENT_LEN = 1000
 MAX_URL_LEN = 2048
 
 CALL_EVENTS = {"call:offer", "call:answer", "call:ice-candidate", "call:end", "call:reject"}
-# Only these fields are relayed for call signalling (no arbitrary client-controlled keys)
 CALL_FIELDS = (
     "type", "call_type", "call_id", "sdp", "candidate", "is_missed",
     "offer", "answer", "is_video",
@@ -68,7 +67,7 @@ dm_hub = DMHub()
 
 
 # --------------------------------------------------------------------------- #
-# Sync DB helpers (run in a worker thread so they never block the event loop)
+# Sync DB helpers
 # --------------------------------------------------------------------------- #
 def _dm_payload(mm: DirectMessage) -> dict:
     return {
@@ -93,7 +92,7 @@ def _save_dm(sender_id, target_id, content, media_url, reply_to_id) -> dict:
             reply_to_id=reply_to_id,
         )
         db.add(mm)
-        db.flush()  # populate mm.id for the notification payload
+        db.flush()
 
         db.add(
             Notification(
@@ -114,7 +113,6 @@ def _save_dm(sender_id, target_id, content, media_url, reply_to_id) -> dict:
 
 
 def _save_group_message(sender_id, group_id, content, media_url):
-    """Returns (payload, member_ids). payload is None if sender isn't in the group."""
     with SessionLocal() as db:
         members = (
             db.query(ChatGroupMember.user_id)
@@ -169,6 +167,22 @@ def _save_missed_call(caller_id, callee_id, call_type) -> dict:
         db.refresh(mm)
         return _dm_payload(mm)
 
+# --- NEW: Save Challenge to Database ---
+def _save_challenge(sender_id, target_id, content, game_slug, room_code) -> dict:
+    with SessionLocal() as db:
+        # We store the game details inside the media_url field
+        # Format: challenge:{game_slug}:{room_code}
+        mm = DirectMessage(
+            sender_id=sender_id,
+            recipient_id=target_id,
+            content=content,
+            media_url=f"challenge:{game_slug}:{room_code}"
+        )
+        db.add(mm)
+        db.commit()
+        db.refresh(mm)
+        return _dm_payload(mm)
+
 
 # --------------------------------------------------------------------------- #
 # Small validators
@@ -211,10 +225,9 @@ async def handle_group_send(user_id, msg):
         logger.exception("DB error in group:send")
         return
 
-    if out_msg is None:  # not a member of this group
+    if out_msg is None:
         return
 
-    # Includes the sender so their other tabs stay in sync
     await dm_hub.send_to_users(member_ids, out_msg)
 
 
@@ -260,8 +273,6 @@ async def handle_call(user_id, msg):
 
     if is_rejected or is_missed_end:
         call_type = msg.get("call_type") if msg.get("call_type") in ("audio", "video") else "audio"
-        # On reject, user_id is the callee and target_id is the caller;
-        # on a missed end, user_id is the caller. The log entry belongs to the caller.
         caller_id, callee_id = (target_id, user_id) if is_rejected else (user_id, target_id)
         try:
             out_msg = await asyncio.to_thread(_save_missed_call, caller_id, callee_id, call_type)
@@ -273,12 +284,34 @@ async def handle_call(user_id, msg):
     relay["sender_id"] = user_id
     await dm_hub.send_to_user(target_id, relay)
 
+# --- NEW: Handle Game Challenge ---
+async def handle_challenge(user_id, msg):
+    target_id = msg.get("target_id")
+    content = _clean_text(msg.get("content"))
+    game_slug = msg.get("game_slug")
+    room_code = msg.get("room_code")
+
+    if not target_id or not content or not game_slug or not room_code:
+        return
+
+    try:
+        out_msg = await asyncio.to_thread(
+            _save_challenge, user_id, target_id, content, game_slug, room_code
+        )
+    except Exception:
+        logger.exception("DB error in dm:challenge")
+        return
+
+    # Send to both sender (for multi-tab sync) and recipient
+    await dm_hub.send_to_users([target_id, user_id], out_msg)
+
 
 HANDLERS = {
     "dm:typing": handle_typing,
     "group:send": handle_group_send,
     "dm:send": handle_dm_send,
     "dm:seen": handle_dm_seen,
+    "dm:challenge": handle_challenge, # <-- REGISTERED HERE
     **{event: handle_call for event in CALL_EVENTS},
 }
 
@@ -322,7 +355,6 @@ async def dm_websocket(ws: WebSocket, token: str = Query(...)):
             except WebSocketDisconnect:
                 raise
             except Exception:
-                # One bad message must never kill the connection
                 logger.exception("Unhandled error in %s", msg.get("type"))
 
     except WebSocketDisconnect:
