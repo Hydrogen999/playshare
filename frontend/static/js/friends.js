@@ -1,6 +1,69 @@
 import { api } from "./api.js";
 import { avatarHTML } from "./avatars.js";
 
+// 🟢 INJECTING THE INSANE ANIMATED BACKGROUND CSS
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes move-stars {
+      0% { background-position: 0 0; }
+      100% { background-position: 500px 500px; }
+  }
+  @keyframes glow-pulse {
+      0% { box-shadow: 0 0 10px rgba(245,158,11,0.4); }
+      50% { box-shadow: 0 0 25px rgba(245,158,11,0.9), 0 0 10px rgba(245,158,11,0.5) inset; }
+      100% { box-shadow: 0 0 10px rgba(245,158,11,0.4); }
+  }
+  @keyframes float-btn {
+      0% { transform: translateY(0px); }
+      50% { transform: translateY(-3px); }
+      100% { transform: translateY(0px); }
+  }
+  .premium-header {
+      background-color: #03001C !important;
+      background-image: 
+          radial-gradient(1.5px 1.5px at 20px 30px, #fff, rgba(0,0,0,0)),
+          radial-gradient(1.5px 1.5px at 40px 70px, #F59E0B, rgba(0,0,0,0)),
+          radial-gradient(1.5px 1.5px at 50px 160px, #fff, rgba(0,0,0,0)),
+          radial-gradient(1.5px 1.5px at 90px 40px, #06b6d4, rgba(0,0,0,0)),
+          radial-gradient(1.5px 1.5px at 130px 80px, #fff, rgba(0,0,0,0)),
+          radial-gradient(1.5px 1.5px at 160px 120px, #F59E0B, rgba(0,0,0,0)) !important;
+      background-repeat: repeat !important;
+      background-size: 200px 200px !important;
+      animation: move-stars 40s linear infinite !important;
+      border-bottom: 2px solid rgba(245, 158, 11, 0.3) !important;
+      position: relative;
+  }
+  .premium-header::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(3,0,28,0) 0%, rgba(245,158,11,0.1) 50%, rgba(3,0,28,0) 100%);
+      pointer-events: none;
+  }
+  .action-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      transition: all 0.3s ease;
+      display: flex; align-items: center; justify-content: center;
+  }
+  .action-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.3);
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+  }
+  .premium-action-btn {
+      border-color: rgba(245, 158, 11, 0.4);
+      background: rgba(245, 158, 11, 0.1);
+  }
+  .premium-action-btn:hover {
+      box-shadow: 0 0 15px rgba(245, 158, 11, 0.5);
+      border-color: rgba(245, 158, 11, 0.8);
+  }
+`;
+document.head.appendChild(style);
+
 const $ = (id) => document.getElementById(id);
 
 let me = null, myId = null, activeTab = "friends", activeChatUserId = null;
@@ -33,14 +96,8 @@ let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 let recordingTarget = null;
-
-// --- Reply State ---
 let replyingToMessage = null;
-
-// --- Typing Timeout ---
 let typingTimeout = null;
-
-// --- Emoji Reactions ---
 const EMOJIS = ["❤️", "😂", "🔥", "👍", "😮", "😢"];
 
 const TAB_ACTIVE = "tab-btn flex-shrink-0 px-4 py-4 text-cyber-cyan border-b-2 border-cyber-cyan bg-cyber-cyan/5 transition";
@@ -96,16 +153,6 @@ function connectDMSocket() {
       if (activeGroupId && String(activeGroupId) === String(msg.group_id)) addMessageToUI(msg);
       refreshAll();
     }
-    else if (msg.type === "group:created") {
-      await refreshAll(); 
-      if (activeTab === "groups") renderList();
-      const toast = document.createElement("div");
-      toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-brand-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold animate-bounce cursor-pointer flex items-center gap-2";
-      toast.innerHTML = `👥 You were added to "<b>${escapeHTML(msg.group.name)}</b>"`;
-      toast.onclick = () => { setActiveTab("groups"); renderList(); toast.remove(); };
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 5000);
-    }
     else if (msg.type === "dm:typing") {
       if (activeChatUserId === msg.sender_id) {
         const ind = $("typingIndicator");
@@ -136,12 +183,10 @@ function connectDMSocket() {
                 reactBar.className = "reaction-bar flex flex-wrap gap-1 mt-1 absolute -bottom-3 right-0 bg-slate-900 border border-slate-700 rounded-full px-2 py-0.5 shadow-lg z-10";
                 msgWrap.appendChild(reactBar);
             }
-            
             if (reactBar) {
                 if (msg.action === "add") {
                     const existing = reactBar.querySelector(`[data-user="${msg.user_id}"]`);
                     if (existing) existing.remove();
-                    
                     const span = document.createElement("span");
                     span.className = "text-xs reaction-item";
                     span.dataset.user = msg.user_id;
@@ -170,22 +215,13 @@ function connectDMSocket() {
     }
     else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer, !!msg.is_video);
     else if (msg.type === "call:answer") {
-      if (pc) { 
-          clearTimeout(callTimeout); 
-          pc.setRemoteDescription(new RTCSessionDescription(msg.answer))
-            .catch(e => console.error("Error setting remote desc:", e)); 
-      }
+      if (pc) { clearTimeout(callTimeout); pc.setRemoteDescription(new RTCSessionDescription(msg.answer)).catch(e => console.error(e)); }
     }
     else if (msg.type === "call:ice-candidate") { 
-        if (pc && msg.candidate) {
-            pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(e => console.error("Error adding ICE:", e)); 
-        }
+        if (pc && msg.candidate) { pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(e => console.error(e)); }
     }
     else if (msg.type === "call:end") endCall();
-    else if (msg.type === "call:reject") {
-      if (currentCallTargetId) alert("Call was declined.");
-      endCall();
-    }
+    else if (msg.type === "call:reject") { if (currentCallTargetId) alert("Call was declined."); endCall(); }
   });
 
   dmSocket.addEventListener("close", () => {
@@ -206,42 +242,62 @@ function timeAgo(iso) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 function escapeHTML(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function premiumMark(isPremium) { return isPremium ? '<span class="text-amber-400 text-xs ml-1 drop-shadow-[0_0_5px_rgba(245,158,11,0.8)]">👑</span>' : ""; }
 
-function premiumMark(isPremium) {
-    return isPremium ? '<span class="text-amber-400 text-xs ml-1 drop-shadow-[0_0_5px_rgba(245,158,11,0.8)]">👑</span>' : "";
-}
-
+// 🟢 THE INSANE PREMIUM HEADER
 function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSeen) {
     let statusHtml = "";
     if (isOnline) {
-        statusHtml = `<span class="text-emerald-400 font-bold text-[10px] flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Online</span>`;
+        statusHtml = `<span class="text-emerald-400 font-bold text-[11px] flex items-center gap-1 mt-0.5"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span> Online</span>`;
     } else if (lastSeen) {
-        statusHtml = `<span class="text-slate-500 text-[10px]">Last seen ${timeAgo(lastSeen)}</span>`;
+        statusHtml = `<span class="text-slate-400 text-[11px] mt-0.5">Last seen ${timeAgo(lastSeen)}</span>`;
     }
     
-    const glowClass = isPremium ? "shadow-[0_0_15px_rgba(245,158,11,0.6)] rounded-full" : "";
+    const headerContainer = $("chatHeader");
+    const isPremiumHeader = isPremium ? "premium-header" : "bg-slate-900/90 backdrop-blur-md border-b border-slate-800";
+    headerContainer.className = `px-4 py-3 flex items-center gap-3 z-10 transition-all duration-500 ${isPremiumHeader}`;
+
+    const glowClass = isPremium ? "border-2 border-amber-400/80 shadow-[0_0_20px_rgba(245,158,11,0.6)] rounded-full p-0.5" : "";
+    const nameClass = isPremium ? "text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 font-black tracking-wide" : "text-slate-100 font-bold";
+    const btnClass = isPremium ? "action-btn premium-action-btn w-10 h-10 text-lg" : "action-btn w-10 h-10 text-lg";
+    const iconColor = isPremium ? "drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]" : "";
 
     $("chatHeaderContent").innerHTML = `
-      <div class="flex items-center justify-between w-full">
-        <div class="flex items-center gap-3">
+      <div class="flex items-center justify-between w-full relative z-10">
+        <div class="flex items-center gap-4">
+          <!-- Back button for mobile -->
+          <button id="mobileBack" class="md:hidden text-slate-300 hover:text-white transition">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          
           <div class="${glowClass}">${avatarHTML(avatarId, "sm", null, isPremium)}</div>
-          <div>
-            <div class="text-sm font-bold text-slate-100 flex items-center">${escapeHTML(username)}${premiumMark(isPremium)}</div>
-            <div id="typingIndicator" class="hidden"></div>
+          
+          <div class="flex flex-col">
+            <div class="text-[17px] flex items-center ${nameClass}">${escapeHTML(username)}${premiumMark(isPremium)}</div>
+            <div id="typingIndicator" class="hidden text-[10px] text-brand-400 font-bold"></div>
             ${statusHtml}
           </div>
         </div>
-        <div class="flex items-center gap-1">
-          <button id="searchChatBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Search Messages">🔍</button>
-          <button id="startAudioCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Audio Call">📞</button>
-          <button id="startVideoCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Video Call">📹</button>
-          <button id="inviteGameBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Challenge">⚔️</button>
+        
+        <div class="flex items-center gap-2">
+          <button id="searchChatBtn" class="${btnClass} ${iconColor}" title="Search"><span class="mb-0.5">🔍</span></button>
+          <button id="startAudioCallBtn" class="${btnClass} ${iconColor}" title="Audio Call"><span class="mb-0.5">📞</span></button>
+          <button id="startVideoCallBtn" class="${btnClass} ${iconColor}" title="Video Call"><span class="mb-0.5">📹</span></button>
+          <button id="inviteGameBtn" class="${btnClass} ${iconColor}" title="Challenge"><span class="mb-0.5">⚔️</span></button>
         </div>
       </div>`;
 
-    if ($("searchChatBtn")) {
-        $("searchChatBtn").onclick = toggleSearchUI;
-    }
+    if ($("searchChatBtn")) $("searchChatBtn").onclick = toggleSearchUI;
+    
+    // Re-attach mobile back button listener since we recreated it
+    $("mobileBack")?.addEventListener("click", () => {
+        $("chatSearchBar")?.remove(); 
+        $("chatMessages").innerHTML = "";
+        $("chatForm")?.classList.add("hidden");
+        updateChatHeaderStatus("", "default", false, false, null);
+        $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400">Select a conversation</div>`;
+        renderList();
+    });
 }
 
 function toggleSearchUI() {
@@ -254,7 +310,7 @@ function toggleSearchUI() {
 
     searchBar = document.createElement("div");
     searchBar.id = "chatSearchBar";
-    searchBar.className = "px-4 py-2 border-b border-brand-500/20 bg-slate-900/90 flex items-center gap-2 z-20 absolute top-0 left-0 w-full shadow-lg backdrop-blur-md";
+    searchBar.className = "px-4 py-2 border-b border-brand-500/20 bg-slate-900/95 flex items-center gap-2 z-20 absolute top-0 left-0 w-full shadow-lg backdrop-blur-md animate-[slideUp_0.2s_ease-out]";
     searchBar.innerHTML = `
         <input type="text" id="chatSearchInput" placeholder="Search in conversation..." class="flex-1 bg-slate-800 text-white rounded-lg px-3 py-1.5 text-sm focus:outline-none border border-slate-700 focus:border-cyber-cyan" />
         <button id="closeSearchBtn" class="text-slate-400 hover:text-white font-bold px-2">✕</button>
@@ -269,10 +325,7 @@ function toggleSearchUI() {
 
     $("chatSearchInput").addEventListener("input", async (e) => {
         const query = e.target.value.trim().toLowerCase();
-        if (!query) {
-            loadMessages();
-            return;
-        }
+        if (!query) { loadMessages(); return; }
         
         const msgs = await api.getConversation(activeChatUserId);
         const filtered = msgs.filter(m => m.content && m.content.toLowerCase().includes(query));
@@ -302,7 +355,6 @@ function closeChatPanel() {
   removeReplyPreview();
   renderList();
 }
-$("mobileBack")?.addEventListener("click", closeChatPanel);
 
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -481,6 +533,7 @@ async function openGroupChat(groupId, groupName) {
   activeChatUserId = null;
   openChatPanel();
 
+  $("chatHeader").className = "px-4 py-3 border-b border-brand-500/20 flex items-center gap-3 bg-slate-900/40 backdrop-blur-md z-10";
   $("chatHeaderContent").innerHTML = `
     <div class="flex items-center gap-3">
       <div class="h-10 w-10 rounded-full bg-slate-700 flex items-center justify-center text-lg">👥</div>
@@ -511,7 +564,6 @@ async function loadMessages() {
   } catch (err) { console.error(err); }
 }
 
-// 🟢 REPLY & DELETE PREVIEW LOGIC
 function setReply(msg) {
     replyingToMessage = msg;
     let preview = $("replyPreview");
@@ -635,7 +687,6 @@ function addMessageToUI(m, highlightQuery = null) {
 
   const timeStr = timeAgo(m.created_at);
   
-  // 🟢 Beautiful inline delete & time layout
   let statusHtml = mine 
     ? `<div class="text-[10px] text-brand-200/70 mt-1 flex justify-end items-center gap-1"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> ${timeStr}</div>` 
     : `<div class="text-[10px] text-slate-500 mt-1">${timeStr}</div>`;
@@ -646,7 +697,6 @@ function addMessageToUI(m, highlightQuery = null) {
 
   let deleteBtnHtml = "";
   if (mine && !m.is_deleted) {
-      // On Mobile, we use swipe left. On Desktop, we show a small trash icon.
       deleteBtnHtml = `
         <button class="delete-btn absolute left-2 bottom-2 opacity-30 hover:opacity-100 transition-opacity p-1 text-slate-300 hover:text-red-400 rounded" title="Delete">
             🗑️
@@ -660,7 +710,6 @@ function addMessageToUI(m, highlightQuery = null) {
       wrap.innerHTML = `${senderHtml}${replyHtml}<div class="w-full flex ${mine ? 'justify-end' : 'justify-start'}"><div class="${bubbleClass} max-w-[85%] p-2">${contentHtml}${mediaHtml}${statusHtml}</div>${deleteBtnHtml}</div>`;
   }
 
-  // Swipe Gestures for Mobile (Reply & Delete)
   let startX = 0;
   let currentX = 0;
   let isSwiping = false;
@@ -681,10 +730,8 @@ function addMessageToUI(m, highlightQuery = null) {
       const diff = currentX - startX;
 
       if (diff > 50) {
-          // Swipe Right -> Reply
           setReply(m);
       } else if (diff < -50 && mine && !m.is_deleted) {
-          // Swipe Left -> Delete
           if (confirm("Delete this message?")) {
               if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
                   dmSocket.send(JSON.stringify({ type: "dm:delete", message_id: m.id }));
@@ -693,16 +740,13 @@ function addMessageToUI(m, highlightQuery = null) {
       }
   });
 
-  // Desktop Right Click -> Reply
   wrap.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       setReply(m);
   });
 
-  // Desktop double click -> Emoji React
   wrap.addEventListener("dblclick", (e) => showEmojiPicker(e, m.id));
 
-  // Desktop Delete Button
   if (deleteBtnHtml) {
       wrap.querySelector(".delete-btn").onclick = (e) => {
           e.stopPropagation();
@@ -732,7 +776,6 @@ function addMessageToUI(m, highlightQuery = null) {
   el.scrollTop = el.scrollHeight;
 }
 
-// --- EMOJI PICKER LOGIC ---
 function showEmojiPicker(e, messageId) {
     e.preventDefault();
     e.stopPropagation();
@@ -824,7 +867,6 @@ $("chatForm")?.addEventListener("submit", async (e) => {
   removeReplyPreview();
 });
 
-// 🟢 ATTACHMENT MENU LOGIC
 $("attachmentBtn")?.addEventListener("click", (e) => {
     e.stopPropagation();
     document.querySelectorAll(".attachment-menu").forEach(el => el.remove());
@@ -937,7 +979,6 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
     };
 });
 
-// --- CREATE GROUP MODAL LOGIC ---
 $("createGroupBtn")?.addEventListener("click", () => {
   if (friends.length === 0) return alert("Add friends first to create a group.");
 
@@ -983,7 +1024,6 @@ $("createGroupBtn")?.addEventListener("click", () => {
   };
 });
 
-// --- GAME CHALLENGE MODAL ---
 async function showChallengeModal(userId, username) {
   const games = [
     { slug: "ludo",  name: "Ludo",  icon: "🎲", max: 2 },
@@ -1066,9 +1106,6 @@ async function showChallengeModal(userId, username) {
   });
 }
 
-// ---------------------------------------------------------
-// 4. WEBRTC CALLING SYSTEM
-// ---------------------------------------------------------
 function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   if ($("videoCallOverlay")) $("videoCallOverlay").remove();
   const overlay = document.createElement("div");
@@ -1385,9 +1422,6 @@ function endCall() {
   currentCallTargetId = null;
 }
 
-// ---------------------------------------------------------
-// 5. STATUS / STORIES
-// ---------------------------------------------------------
 let groupedStories = {};
 
 async function renderStories() {
@@ -1566,9 +1600,6 @@ function showCreateStatusModal() {
   });
 }
 
-// ---------------------------------------------------------
-// 6. BOOT
-// ---------------------------------------------------------
 async function refreshAll() {
   const [f, r, c, g] = await Promise.allSettled([
     api.listFriends(),
