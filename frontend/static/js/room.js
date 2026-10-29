@@ -48,6 +48,7 @@ let wagerLocked = false;
 let ludoBoard = null;
 let chessBoard = null;
 let whotBoard = null;
+let pingInterval = null; // 🟢 ADDED FOR HEARTBEAT
 
 const RECONNECT_KEY = `ps_rc_${roomId}`;
 let reconnectToken = localStorage.getItem(RECONNECT_KEY) || null;
@@ -320,7 +321,7 @@ function connectWebSocket(token) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   let url = `${proto}//${location.host}/ws/room/${encodeURIComponent(roomId)}?token=${encodeURIComponent(token)}`;
   if (reconnectToken && !isSpectator) url += `&reconnect_token=${encodeURIComponent(reconnectToken)}`;
-  if (isSpectator) url += `&spectator=true`; // <-- Spectator flag
+  if (isSpectator) url += `&spectator=true`;
   ws = new WebSocket(url);
   
   ws.addEventListener("open", () => { 
@@ -331,11 +332,23 @@ function connectWebSocket(token) {
       showReconnectBanner("✓ Reconnected", "green");
       setTimeout(hideReconnectBanner, 1500);
     }
+
+    // 🟢 HEARTBEAT: Send ping every 20 seconds to keep Render alive
+    clearInterval(pingInterval);
+    pingInterval = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "ping" }));
+      }
+    }, 20000);
+
   });
 
   ws.addEventListener("message", (ev) => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
+
+    // 🟢 IGNORE PONG RESPONSES
+    if (msg.type === "pong" || msg.type === "ping") return;
 
     switch (msg.type) {
       case "room:init": {
@@ -463,6 +476,9 @@ function connectWebSocket(token) {
   });
 
   ws.addEventListener("close", () => {
+    // 🟢 CLEAR HEARTBEAT ON CLOSE
+    clearInterval(pingInterval);
+    
     chatStatus.textContent = "● disconnected";
     chatStatus.className = "text-xs text-red-400";
 
