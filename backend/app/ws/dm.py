@@ -3,15 +3,14 @@ import json
 import logging
 
 from app.models.social import ChatGroupMember, DirectMessage, Notification, MessageReaction
+from sqlalchemy import func
 
 import jwt
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
-from sqlalchemy import func
 
 from app.database import SessionLocal
-from app.models.social import ChatGroupMember, DirectMessage, Notification
-from app.models.token import TokenAccount, LedgerTransaction, LedgerEntry # <-- NEW
-from app.models.user import User, Profile # <-- NEW
+from app.models.token import TokenAccount, LedgerTransaction, LedgerEntry
+from app.models.user import User, Profile
 from app.security import decode_token
 
 logger = logging.getLogger(__name__)
@@ -67,8 +66,8 @@ class DMHub:
 dm_hub = DMHub()
 
 
-def _dm_payload(mm: DirectMessage) -> dict:
-    return {
+def _dm_payload(mm: DirectMessage, db=None) -> dict:
+    payload = {
         "type": "dm:new",
         "id": mm.id,
         "sender_id": mm.sender_id,
@@ -78,6 +77,10 @@ def _dm_payload(mm: DirectMessage) -> dict:
         "reply_to_id": getattr(mm, "reply_to_id", None),
         "created_at": mm.created_at.isoformat(),
     }
+    if db:
+        reacts = db.query(MessageReaction).filter(MessageReaction.message_id == mm.id).all()
+        payload["reactions"] = [{"user_id": r.user_id, "emoji": r.emoji} for r in reacts]
+    return payload
 
 
 def _save_dm(sender_id, target_id, content, media_url, reply_to_id) -> dict:
@@ -174,28 +177,23 @@ def _save_challenge(sender_id, target_id, content, game_slug, room_code) -> dict
         return _dm_payload(mm)
 
 
-# --- NEW: Save Gift, Transfer Coins, and Create Notification ---
 def _save_gift_and_transfer(sender_id, target_id, amount) -> dict:
     with SessionLocal() as db:
         try:
-            # 1. Check sender's balance securely (locks the row)
             sender_acc = db.query(TokenAccount).filter(TokenAccount.user_id == sender_id).with_for_update().first()
             target_acc = db.query(TokenAccount).filter(TokenAccount.user_id == target_id).with_for_update().first()
             
             if not sender_acc or not target_acc or sender_acc.balance < amount:
                 return {"ok": False, "error": "Insufficient balance"}
 
-            # 2. Perform the transfer
             sender_acc.balance -= amount
             target_acc.balance += amount
             
-            # 3. Update the cached profile balances
             sender_prof = db.query(Profile).filter(Profile.user_id == sender_id).first()
             target_prof = db.query(Profile).filter(Profile.user_id == target_id).first()
             if sender_prof: sender_prof.tokens_cached -= amount
             if target_prof: target_prof.tokens_cached += amount
 
-            # 4. Create Ledger Log
             tx = LedgerTransaction(type="gift", notes=f"Gift from {sender_id} to {target_id}")
             db.add(tx)
             db.flush()
@@ -203,7 +201,6 @@ def _save_gift_and_transfer(sender_id, target_id, amount) -> dict:
             db.add(LedgerEntry(transaction_id=tx.id, account_id=sender_id, delta=-amount, balance_after=sender_acc.balance))
             db.add(LedgerEntry(transaction_id=tx.id, account_id=target_id, delta=amount, balance_after=target_acc.balance))
 
-            # 5. Save the Chat Message
             mm = DirectMessage(
                 sender_id=sender_id,
                 recipient_id=target_id,
@@ -212,7 +209,6 @@ def _save_gift_and_transfer(sender_id, target_id, amount) -> dict:
             )
             db.add(mm)
 
-            # 6. Create Notification for Receiver
             db.add(Notification(
                 user_id=target_id,
                 type="gift",
@@ -368,12 +364,55 @@ async def handle_gift(user_id, msg):
     if res.get("ok"):
         out_msg = res["message"]
         await dm_hub.send_to_users([target_id, user_id], out_msg)
-        
-        # Send balance updates to BOTH users so their UI updates instantly
         await dm_hub.send_to_user(user_id, {"type": "balance:update", "new_balance": res["new_sender_balance"]})
         await dm_hub.send_to_user(target_id, {"type": "balance:update", "new_balance": res["new_target_balance"]})
     else:
         await dm_hub.send_to_user(user_id, {"type": "dm:error", "error": res.get("error", "Gift failed")})
+
+
+# --- NEW: HANDLER FOR REACTIONS ---
+def _save_reaction(msg_id, user_id, emoji) -> dict:
+    with SessionLocal() as db:
+        existing = db.query(MessageReaction).filter(
+            MessageReaction.message_id == msg_id,
+            MessageReaction.user_id == user_id
+        ).first()
+
+        msg = db.query(DirectMessage).filter(DirectMessage.id == msg_id).first()
+        if not msg:
+            return None
+
+        action = "add"
+        if existing:
+            if existing.emoji == emoji:
+                db.delete(existing)
+                action = "remove"
+            else:
+                existing.emoji = emoji
+        else:
+            db.add(MessageReaction(message_id=msg_id, user_id=user_id, emoji=emoji))
+        
+        db.commit()
+        return {
+            "type": "dm:reaction",
+            "message_id": msg_id,
+            "user_id": user_id,
+            "emoji": emoji,
+            "action": action,
+            "sender_id": msg.sender_id,
+            "recipient_id": msg.recipient_id,
+        }
+
+
+async def handle_react(user_id, msg):
+    msg_id = msg.get("message_id")
+    emoji = msg.get("emoji")
+    if not msg_id or not emoji:
+        return
+
+    res = await asyncio.to_thread(_save_reaction, msg_id, user_id, emoji)
+    if res:
+        await dm_hub.send_to_users([res["sender_id"], res["recipient_id"]], res)
 
 
 HANDLERS = {
@@ -383,6 +422,7 @@ HANDLERS = {
     "dm:seen": handle_dm_seen,
     "dm:challenge": handle_challenge,
     "dm:gift": handle_gift,
+    "dm:react": handle_react, # <-- ADDED THIS
     **{event: handle_call for event in CALL_EVENTS},
 }
 
