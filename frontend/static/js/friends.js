@@ -644,6 +644,91 @@ $("createGroupBtn")?.addEventListener("click", () => {
   };
 });
 
+// --- GAME CHALLENGE MODAL ---
+async function showChallengeModal(userId, username) {
+  const games = [
+    { slug: "ludo",  name: "Ludo",  icon: "🎲", max: 2 },
+    { slug: "chess", name: "Chess", icon: "♟️", max: 2 },
+    { slug: "whot",  name: "Whot",  icon: "🃏", max: 2 },
+  ];
+
+  const modal = document.createElement("div");
+  modal.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
+  modal.innerHTML = `
+    <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-cyber-pink/50 shadow-[0_0_40px_rgba(236,72,153,0.3)]">
+      <h3 class="text-white font-bold text-lg mb-1">Challenge ${escapeHTML(username)} ⚔️</h3>
+      <p class="text-slate-400 text-xs mb-4">Pick a game — we'll create a private room and send the invite.</p>
+
+      <div class="grid grid-cols-3 gap-2 mb-4">
+        ${games.map(g => `
+          <button data-game="${g.slug}" data-name="${g.name}" data-max="${g.max}"
+            class="game-pick-btn flex flex-col items-center gap-1 p-3 rounded-xl bg-slate-800 border-2 border-slate-700 hover:border-cyber-pink transition">
+            <span class="text-2xl">${g.icon}</span>
+            <span class="text-[10px] text-white font-bold">${escapeHTML(g.name)}</span>
+          </button>
+        `).join("")}
+      </div>
+
+      <label class="block text-[10px] text-slate-400 uppercase tracking-wider mb-1">Wager (optional, PlayCoins)</label>
+      <input type="number" id="challengeWager" min="0" max="10000" value="0" placeholder="0"
+        class="w-full bg-slate-800 text-white text-center text-sm font-bold rounded-lg p-2.5 mb-4 focus:outline-none border border-slate-700 focus:border-cyber-pink" />
+
+      <button id="cancelChallengeBtn" class="w-full py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("#cancelChallengeBtn").onclick = () => modal.remove();
+
+  modal.querySelectorAll(".game-pick-btn").forEach(btn => {
+    btn.onclick = async () => {
+      const gameSlug = btn.dataset.game;
+      const gameName = btn.dataset.name;
+      const maxPlayers = parseInt(btn.dataset.max, 10) || 2;
+      const wagerInput = modal.querySelector("#challengeWager");
+      let wager = parseInt(wagerInput.value, 10);
+      if (isNaN(wager) || wager < 0) wager = 0;
+      if (wager > 10000) wager = 10000;
+
+      btn.disabled = true;
+      btn.classList.add("opacity-50");
+
+      try {
+        // 1. Create a private room
+        const room = await api.request("/api/v1/rooms", {
+          method: "POST",
+          body: { game_slug: gameSlug, max_players: maxPlayers, wager, is_public: false }
+        });
+        const roomCode = room.code;
+        if (!roomCode) throw new Error("No room code returned from server");
+
+        // 2. Send the challenge over the DM socket
+        if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) {
+          throw new Error("Chat socket not connected — wait a second and try again");
+        }
+        dmSocket.send(JSON.stringify({
+          type: "dm:challenge",
+          target_id: userId,
+          content: `invited you to play ${gameName}${wager > 0 ? ` for ${wager} PC` : ""}!`,
+          game_slug: gameSlug,
+          room_code: roomCode
+        }));
+
+        modal.remove();
+
+        const toast = document.createElement("div");
+        toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-cyber-pink text-white px-6 py-3 rounded-full shadow-2xl font-bold animate-bounce";
+        toast.textContent = `⚔️ Challenge sent to ${username}!`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+      } catch (err) {
+        alert("Could not send challenge: " + err.message);
+        btn.disabled = false;
+        btn.classList.remove("opacity-50");
+      }
+    };
+  });
+}
+
 // --- VOICE NOTE LOGIC ---
 $("voiceNoteBtn")?.addEventListener("click", async () => {
   if (!activeChatUserId && !activeGroupId && !isRecording) return;
