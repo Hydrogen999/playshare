@@ -36,19 +36,13 @@
 <body class="min-h-screen cyber-bg text-slate-100 font-sans antialiased">
 
   <header class="border-b border-brand-500/20 sticky top-0 z-30 bg-slate-950/80 backdrop-blur-md">
-    <div class="mx-auto max-w-6xl px-4 sm:px-6 py-3 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <a href="/dashboard" class="flex items-center gap-2">
-          <div class="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-500 to-cyber-pink grid place-items-center font-extrabold shadow-lg shadow-brand-500/30">P</div>
-          <span class="font-bold font-display tracking-wide hidden sm:inline">PlaySphere</span>
-        </a>
-        <span class="text-xs text-brand-400 font-bold ml-2">· COMMS</span>
-      </div>
-      <div class="flex items-center gap-3 text-sm">
-        <a href="/lobby" class="text-slate-400 hover:text-cyber-cyan transition">Lobby</a>
-        <a href="/dashboard" class="text-slate-400 hover:text-cyber-cyan transition">Home</a>
-      </div>
-    </div>
+          <div id="chatHeader" class="px-4 py-3 border-b border-brand-500/20 flex items-center gap-3 bg-slate-900/40 backdrop-blur-md z-10">
+          <!-- 🟢 We put the back button right here in the HTML -->
+          <button id="mobileBack" class="md:hidden text-slate-400 hover:text-white p-1 -ml-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <div id="chatHeaderContent" class="text-sm text-slate-400 font-medium w-full">Select a conversation</div>
+        </div>
   </header>
 
   <main class="mx-auto max-w-6xl px-0 sm:px-4 py-0 sm:py-6">
