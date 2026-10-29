@@ -463,6 +463,13 @@ function addMessageToUI(m) {
   wrap.addEventListener("touchend", () => clearTimeout(pressTimer));
   wrap.addEventListener("touchmove", () => clearTimeout(pressTimer));
 
+  // --- Double-click opens the emoji picker (FIX ADDED HERE) ---
+  wrap.addEventListener("dblclick", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showEmojiPicker(e, m.id);
+  });
+
   el.appendChild(wrap);
   el.scrollTop = el.scrollHeight;
 }
