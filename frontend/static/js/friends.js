@@ -34,6 +34,9 @@ let audioChunks = [];
 let isRecording = false;
 let recordingTarget = null;
 
+// --- Reply State ---
+let replyingToMessage = null;
+
 // --- Typing Timeout ---
 let typingTimeout = null;
 
@@ -208,54 +211,37 @@ function premiumMark(isPremium) {
     return isPremium ? '<span class="text-amber-400 text-xs ml-1 drop-shadow-[0_0_5px_rgba(245,158,11,0.8)]">👑</span>' : "";
 }
 
-// 🟢 NEW: Ultra-Clean Glassmorphism Header
 function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSeen) {
-    let statusPill = "";
+    let statusHtml = "";
     if (isOnline) {
-        statusPill = `<div class="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]"></span><span class="text-emerald-400 font-bold text-[9px] uppercase tracking-wider">Online</span></div>`;
+        statusHtml = `<span class="text-emerald-400 font-bold text-[10px] flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Online</span>`;
     } else if (lastSeen) {
-        statusPill = `<div class="flex items-center gap-1.5 bg-slate-800/50 border border-slate-700 px-2 py-0.5 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span><span class="text-slate-400 font-bold text-[9px] uppercase tracking-wider">Last seen ${timeAgo(lastSeen)}</span></div>`;
+        statusHtml = `<span class="text-slate-500 text-[10px]">Last seen ${timeAgo(lastSeen)}</span>`;
     }
     
-    const glowClass = isPremium ? "ring-2 ring-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.4)] rounded-full" : "";
+    const glowClass = isPremium ? "shadow-[0_0_15px_rgba(245,158,11,0.6)] rounded-full" : "";
 
     $("chatHeaderContent").innerHTML = `
       <div class="flex items-center justify-between w-full">
-        <div class="flex items-center gap-4">
-          <!-- Avatar with premium glow -->
-          <div class="relative cursor-pointer ${glowClass}">
-            ${avatarHTML(avatarId, "md", null, isPremium)}
-          </div>
-          
-          <!-- Name and Status -->
-          <div class="flex flex-col">
-            <div class="text-[15px] font-bold text-white flex items-center tracking-wide">${escapeHTML(username)}${premiumMark(isPremium)}</div>
-            <div class="mt-1 flex items-center">
-                <div id="typingIndicator" class="text-[10px] text-brand-400 font-bold animate-pulse hidden mr-2"></div>
-                ${statusPill}
-            </div>
+        <div class="flex items-center gap-3">
+          <div class="${glowClass}">${avatarHTML(avatarId, "sm", null, isPremium)}</div>
+          <div>
+            <div class="text-sm font-bold text-slate-100 flex items-center">${escapeHTML(username)}${premiumMark(isPremium)}</div>
+            <div id="typingIndicator" class="hidden"></div>
+            ${statusHtml}
           </div>
         </div>
-        
-        <!-- SVG Action Buttons -->
-        <div class="flex items-center gap-1 bg-slate-900/50 p-1 rounded-full border border-slate-800">
-          <button id="searchChatBtn" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition" title="Search">
-             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-          </button>
-          <div class="w-px h-4 bg-slate-700 mx-1"></div>
-          <button id="startAudioCallBtn" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-800 text-slate-400 hover:text-emerald-400 transition" title="Audio Call">
-             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
-          </button>
-          <button id="startVideoCallBtn" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-800 text-slate-400 hover:text-cyber-cyan transition" title="Video Call">
-             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-          </button>
-          <button id="inviteGameBtn" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-800 text-slate-400 hover:text-cyber-pink transition" title="Challenge">
-             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-          </button>
+        <div class="flex items-center gap-1">
+          <button id="searchChatBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Search Messages">🔍</button>
+          <button id="startAudioCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Audio Call">📞</button>
+          <button id="startVideoCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Video Call">📹</button>
+          <button id="inviteGameBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Challenge">⚔️</button>
         </div>
       </div>`;
 
-    if ($("searchChatBtn")) $("searchChatBtn").onclick = toggleSearchUI;
+    if ($("searchChatBtn")) {
+        $("searchChatBtn").onclick = toggleSearchUI;
+    }
 }
 
 function toggleSearchUI() {
@@ -308,10 +294,12 @@ function closeChatPanel() {
   document.body.classList.remove("chat-open");
   activeChatUserId = null;
   activeGroupId = null;
+  replyingToMessage = null;
   $("chatSearchBar")?.remove(); 
   $("chatMessages").innerHTML = "";
   $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400">Select a conversation</div>`;
   $("chatForm")?.classList.add("hidden");
+  removeReplyPreview();
   renderList();
 }
 $("mobileBack")?.addEventListener("click", closeChatPanel);
@@ -467,6 +455,8 @@ function wireGroupRows() {
 async function openChat(userId, username, avatarId, isPremium) {
   activeChatUserId = userId;
   activeGroupId = null;
+  replyingToMessage = null;
+  removeReplyPreview();
   openChatPanel();
 
   const friend = friends.find(f => String(f.id) === String(userId));
@@ -521,6 +511,35 @@ async function loadMessages() {
   } catch (err) { console.error(err); }
 }
 
+// 🟢 REPLY & DELETE PREVIEW LOGIC
+function setReply(msg) {
+    replyingToMessage = msg;
+    let preview = $("replyPreview");
+    if (preview) preview.remove();
+
+    preview = document.createElement("div");
+    preview.id = "replyPreview";
+    preview.className = "flex items-center justify-between bg-slate-800/90 border-l-4 border-brand-500 px-4 py-2 rounded-t-xl mb-1 mx-3 mt-2 animate-[slideUp_0.2s_ease-out]";
+    preview.innerHTML = `
+        <div class="flex-1 min-w-0 pr-2">
+            <div class="text-[10px] text-brand-400 font-bold mb-0.5">Replying to ${msg.sender_id === myId ? 'Yourself' : 'Message'}</div>
+            <div class="text-xs text-slate-300 truncate">${escapeHTML(msg.content)}</div>
+        </div>
+        <button id="cancelReplyBtn" class="text-slate-400 hover:text-white p-1">✕</button>
+    `;
+    
+    const chatForm = $("chatForm");
+    chatForm.parentNode.insertBefore(preview, chatForm);
+    
+    $("cancelReplyBtn").onclick = () => { replyingToMessage = null; preview.remove(); };
+    $("chatInput")?.focus();
+}
+
+function removeReplyPreview() {
+    $("replyPreview")?.remove();
+    replyingToMessage = null;
+}
+
 function addMessageToUI(m, highlightQuery = null) {
   const el = $("chatMessages");
   if (!el) return;
@@ -540,7 +559,7 @@ function addMessageToUI(m, highlightQuery = null) {
   }
 
   const wrap = document.createElement("div");
-  wrap.className = `relative group flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble`;
+  wrap.className = `relative group flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble w-full`;
   wrap.dataset.msgId = m.id;
   wrap.style.animation = "messagePop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards";
 
@@ -551,7 +570,16 @@ function addMessageToUI(m, highlightQuery = null) {
     senderHtml = `<div class="text-[10px] text-cyber-cyan font-bold mb-0.5 px-1">${crown}${escapeHTML(name)}</div>`;
   }
 
-  let replyHtml = m.reply_to_status_id ? `<div class="text-[10px] text-brand-400 mb-1 px-2 border-l-2 border-brand-500">Replied to a status</div>` : "";
+  let replyHtml = "";
+  if (m.reply_to_id) {
+      replyHtml = `
+        <div class="text-[11px] text-slate-400 mb-1 px-3 py-1 bg-slate-900/50 rounded-lg border-l-2 border-cyber-pink max-w-[80%] truncate w-full">
+            <span class="font-bold text-cyber-pink text-[9px] block mb-0.5">Replied to a message</span>
+            (Click to view) 
+        </div>`;
+  } else if (m.reply_to_status_id) {
+      replyHtml = `<div class="text-[10px] text-brand-400 mb-1 px-2 border-l-2 border-brand-500">Replied to a status</div>`;
+  }
 
   let contentHtml = "";
   
@@ -592,21 +620,22 @@ function addMessageToUI(m, highlightQuery = null) {
         const regex = new RegExp(`(${highlightQuery})`, "gi");
         renderedContent = renderedContent.replace(regex, `<mark class="bg-amber-400 text-black rounded px-0.5">$1</mark>`);
     }
-
-    contentHtml = `<div class="message-content max-w-[80%] px-4 py-2 text-[15px] break-words ${bubbleClass}">${renderedContent}</div>`;
+    contentHtml = renderedContent;
   }
 
   let mediaHtml = "";
   if (!m.is_deleted && m.media_url && !m.media_url.startsWith("challenge:") && !m.media_url.startsWith("gift:")) {
     const safeUrl = escapeHTML(m.media_url);
     if (m.media_url.match(/\.(mp4|webm|ogg|mov|mp3|wav|m4a)$/i)) {
-      mediaHtml = `<audio src="${safeUrl}" controls class="message-media mt-2 w-48"></audio>`;
+      mediaHtml = `<audio src="${safeUrl}" controls class="mt-2 w-48"></audio>`;
     } else {
-      mediaHtml = `<img src="${safeUrl}" class="message-media max-w-[200px] rounded-xl mt-1 border border-slate-700" />`;
+      mediaHtml = `<img src="${safeUrl}" class="max-w-[200px] rounded-xl mt-1 border border-slate-700" />`;
     }
   }
 
   const timeStr = timeAgo(m.created_at);
+  
+  // 🟢 Beautiful inline delete & time layout
   let statusHtml = mine 
     ? `<div class="text-[10px] text-brand-200/70 mt-1 flex justify-end items-center gap-1"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> ${timeStr}</div>` 
     : `<div class="text-[10px] text-slate-500 mt-1">${timeStr}</div>`;
@@ -617,19 +646,63 @@ function addMessageToUI(m, highlightQuery = null) {
 
   let deleteBtnHtml = "";
   if (mine && !m.is_deleted) {
+      // On Mobile, we use swipe left. On Desktop, we show a small trash icon.
       deleteBtnHtml = `
-        <button class="delete-btn absolute -left-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 scale-75 group-hover:scale-100 p-2 text-slate-400 hover:text-red-400 bg-slate-900/90 rounded-full border border-slate-700 shadow-lg" title="Delete Message">
+        <button class="delete-btn absolute left-2 bottom-2 opacity-30 hover:opacity-100 transition-opacity p-1 text-slate-300 hover:text-red-400 rounded" title="Delete">
             🗑️
         </button>
       `;
   }
 
   if (m.content && !m.is_deleted && !m.media_url) {
-      wrap.innerHTML = `${senderHtml}${replyHtml}<div class="${bubbleClass} px-4 py-2 flex flex-col">${contentHtml}${statusHtml}</div>${deleteBtnHtml}`;
+      wrap.innerHTML = `${senderHtml}${replyHtml}<div class="relative w-full flex ${mine ? 'justify-end' : 'justify-start'}"><div class="${bubbleClass} max-w-[85%] px-4 py-2 flex flex-col">${contentHtml}${statusHtml}</div>${deleteBtnHtml}</div>`;
   } else {
-      wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}${deleteHtml}`;
+      wrap.innerHTML = `${senderHtml}${replyHtml}<div class="w-full flex ${mine ? 'justify-end' : 'justify-start'}"><div class="${bubbleClass} max-w-[85%] p-2">${contentHtml}${mediaHtml}${statusHtml}</div>${deleteBtnHtml}</div>`;
   }
 
+  // Swipe Gestures for Mobile (Reply & Delete)
+  let startX = 0;
+  let currentX = 0;
+  let isSwiping = false;
+  
+  wrap.addEventListener("touchstart", (e) => {
+      startX = e.touches[0].clientX;
+      isSwiping = false;
+  }, { passive: true });
+
+  wrap.addEventListener("touchmove", (e) => {
+      currentX = e.touches[0].clientX;
+      const diff = currentX - startX;
+      if (Math.abs(diff) > 20) isSwiping = true;
+  }, { passive: true });
+
+  wrap.addEventListener("touchend", (e) => {
+      if (!isSwiping) return;
+      const diff = currentX - startX;
+
+      if (diff > 50) {
+          // Swipe Right -> Reply
+          setReply(m);
+      } else if (diff < -50 && mine && !m.is_deleted) {
+          // Swipe Left -> Delete
+          if (confirm("Delete this message?")) {
+              if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+                  dmSocket.send(JSON.stringify({ type: "dm:delete", message_id: m.id }));
+              }
+          }
+      }
+  });
+
+  // Desktop Right Click -> Reply
+  wrap.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      setReply(m);
+  });
+
+  // Desktop double click -> Emoji React
+  wrap.addEventListener("dblclick", (e) => showEmojiPicker(e, m.id));
+
+  // Desktop Delete Button
   if (deleteBtnHtml) {
       wrap.querySelector(".delete-btn").onclick = (e) => {
           e.stopPropagation();
@@ -654,15 +727,6 @@ function addMessageToUI(m, highlightQuery = null) {
       });
       wrap.appendChild(reactBar);
   }
-  
-  wrap.addEventListener("dblclick", (e) => showEmojiPicker(e, m.id));
-  
-  let pressTimer;
-  wrap.addEventListener("touchstart", (e) => {
-      pressTimer = setTimeout(() => showEmojiPicker(e, m.id), 500);
-  }, { passive: true });
-  wrap.addEventListener("touchend", () => clearTimeout(pressTimer));
-  wrap.addEventListener("touchmove", () => clearTimeout(pressTimer));
 
   el.appendChild(wrap);
   el.scrollTop = el.scrollHeight;
@@ -717,10 +781,14 @@ function currentTarget() { return { groupId: activeGroupId, userId: activeChatUs
 
 function sendToTarget(target, { content = "", media_url = null }) {
   if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) throw new Error("Not connected");
+  
+  const payload = { content, media_url };
+  if (replyingToMessage) payload.reply_to_id = replyingToMessage.id;
+
   if (target.groupId) {
-    dmSocket.send(JSON.stringify({ type: "group:send", group_id: target.groupId, content, media_url }));
+    dmSocket.send(JSON.stringify({ type: "group:send", ...payload, group_id: target.groupId }));
   } else if (target.userId) {
-    dmSocket.send(JSON.stringify({ type: "dm:send", target_id: target.userId, content, media_url }));
+    dmSocket.send(JSON.stringify({ type: "dm:send", ...payload, target_id: target.userId }));
   }
 }
 
@@ -753,6 +821,7 @@ $("chatForm")?.addEventListener("submit", async (e) => {
   if (target.userId) {
     dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: target.userId, is_typing: false }));
   }
+  removeReplyPreview();
 });
 
 // 🟢 ATTACHMENT MENU LOGIC
@@ -794,6 +863,7 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
             try {
                 const url = await uploadMedia(file);
                 sendToTarget(currentTarget(), { media_url: url });
+                removeReplyPreview();
             } catch (err) { alert("Could not upload image."); }
         };
         input.click();
@@ -842,6 +912,7 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
                 try {
                     const url = await uploadMedia(file);
                     sendToTarget(recordingTarget, { media_url: url });
+                    removeReplyPreview();
                 } catch (err) {
                     alert("Could not upload voice note.");
                 }
