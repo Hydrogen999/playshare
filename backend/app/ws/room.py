@@ -1,1152 +1,927 @@
-import { api } from "./api.js";
-import { avatarHTML } from "./avatars.js";
+import asyncio
+import json
 
-const $ = (id) => document.getElementById(id);
+import jwt
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
+from sqlalchemy.orm import Session
 
-let me = null, myId = null, activeTab = "friends", activeChatUserId = null;
-let activeGroupId = null;
-let friends = [], requests = [], conversations = [], groups = [], searchResults = [], statuses = [];
-let pollTimer = null;
-let dmSocket = null;
-let reconnectTimeout = null;
+from app.database import SessionLocal
+from app.models.match import Match
+from app.models.room import Message, Room, RoomMember
+from app.models.user import User
+from app.redis_client import get_redis
+from app.security import decode_token
+from app.services import presence as presence_svc
+from app.services.dice import DiceError, play_match
+from app.services.elo import new_ratings as elo_new_ratings, tier_for as elo_tier
+from app.services.games.chess import (
+    from_fen, to_fen, make_move, legal_moves,
+    state_to_dict as chess_state_to_dict,
+    result as chess_result,
+)
+from app.services.games.ludo import (
+    LudoState, PlayerState, apply_move, begin_roll,
+    legal_moves as ludo_legal_moves, new_ludo_game, state_to_dict as ludo_state_to_dict,
+)
+from app.services.games.whot import (
+    WhotState, play_card as whot_play_card, draw_card as whot_draw_card, 
+    new_whot_game, state_to_dict as whot_state_to_dict, 
+    state_from_dict as whot_state_from_dict, serialize_full_state as whot_full_state
+)
+from app.services.ledger import LedgerError, lock_wager, refund_wager, settle_winner
+from app.services.tournament import advance_winner
+from app.services.xp import award_match_xp
 
-// --- WebRTC & Media Variables ---
-let pc = null;
-let localStream = null;
-let remoteStream = null;
-let currentCallTargetId = null;
-let isVideoCall = false;
-let isMuted = false;
-let callTimeout = null;
-let incomingCallModal = null;
+router = APIRouter()
 
-// --- TURN Servers for reliable connection on mobile data ---
-const ICE_SERVERS = {
-    iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-        {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        },
-        {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        }
+ALLOWED_GAMES = {"dice", "ludo", "chess", "whot"}
+ROOM_CHANNEL_PREFIX = "playsphere:room:"
+
+
+def _elo_of(user: User | None, default: int = 1200) -> int:
+    if not user or not user.profile:
+        return default
+    return getattr(user.profile, "elo_rating", default) or default
+
+
+class RoomHub:
+    def __init__(self):
+        self.local: dict[str, dict[str, WebSocket]] = {}
+        self.spectators: dict[str, set[str]] = {} # Track spectators
+        self._redis = None
+        self._pubsubs: dict[str, object] = {}
+        self._tasks: dict[str, asyncio.Task] = {}
+
+    async def _ensure_started(self):
+        if self._redis is None:
+            self._redis = get_redis()
+
+    async def subscribe(self, room_id: str):
+        await self._ensure_started()
+        if room_id in self._pubsubs:
+            return
+        ps = self._redis.pubsub()
+        await ps.subscribe(f"{ROOM_CHANNEL_PREFIX}{room_id}")
+        self._pubsubs[room_id] = ps
+        self._tasks[room_id] = asyncio.create_task(self._listen(room_id, ps))
+
+    async def _listen(self, room_id: str, ps):
+        try:
+            async for msg in ps.listen():
+                if not msg or msg.get("type") != "message":
+                    continue
+                try:
+                    env = json.loads(msg["data"])
+                except Exception:
+                    continue
+                raw = env.get("__raw")
+                if not raw:
+                    continue
+                target = env.get("__target")
+                sender = env.get("__sender")
+                peers = self.local.get(room_id, {})
+
+                if target:
+                    sock = peers.get(target)
+                    if sock:
+                        try:
+                            await sock.send_text(json.dumps(raw))
+                        except Exception:
+                            peers.pop(target, None)
+                    continue
+
+                for uid, sock in list(peers.items()):
+                    if uid == sender:
+                        continue
+                    try:
+                        await sock.send_text(json.dumps(raw))
+                    except Exception:
+                        peers.pop(uid, None)
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            print(f"[room listener {room_id}] {e}")
+
+    async def publish(self, room_id: str, raw: dict,
+                      exclude: str | None = None, target: str | None = None):
+        await self._ensure_started()
+        env = {"__raw": raw}
+        if exclude:
+            env["__sender"] = exclude
+        if target:
+            env["__target"] = target
+        await self._redis.publish(f"{ROOM_CHANNEL_PREFIX}{room_id}", json.dumps(env))
+
+    async def send_local(self, room_id: str, user_id: str, raw: dict):
+        sock = self.local.get(room_id, {}).get(user_id)
+        if not sock:
+            return
+        try:
+            await sock.send_text(json.dumps(raw))
+        except Exception:
+            self.local.get(room_id, {}).pop(user_id, None)
+
+    async def send_to_user(self, room_id: str, user_id: str, raw: dict):
+        if user_id in self.local.get(room_id, {}):
+            await self.send_local(room_id, user_id, raw)
+        else:
+            await self.publish(room_id, raw, target=user_id)
+
+    async def join(self, room_id: str, user_id: str, ws: WebSocket, spectator: bool = False):
+        self.local.setdefault(room_id, {})[user_id] = ws
+        if spectator:
+            self.spectators.setdefault(room_id, set()).add(user_id)
+        await self.subscribe(room_id)
+
+    async def leave(self, room_id: str, user_id: str):
+        self.local.get(room_id, {}).pop(user_id, None)
+        if room_id in self.spectators:
+            self.spectators[room_id].discard(user_id)
+
+
+hub = RoomHub()
+
+
+def _member_payload(db: Session, member: RoomMember) -> dict:
+    u = db.get(User, member.user_id)
+    return {
+        "user_id": member.user_id,
+        "username": u.username if u else "unknown",
+        "avatar_id": u.profile.avatar_id if u else "fox",
+        "level": u.profile.level if u else 1,
+        "ready": member.ready,
+    }
+
+
+def _ensure_pending_match(db: Session, room: Room) -> Match | None:
+    existing = (
+        db.query(Match)
+        .filter(Match.room_id == room.id, Match.status.in_(["pending", "playing"]))
+        .first()
+    )
+    if existing:
+        return existing
+    members = db.query(RoomMember).filter(RoomMember.room_id == room.id).all()
+    if len(members) < 2:
+        return None
+    m = Match(
+        room_id=room.id,
+        game_slug=room.game_slug,
+        status="pending",
+        wager=room.wager or 0,
+        player_a=members[0].user_id,
+        player_b=members[1].user_id,
+    )
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return m
+
+
+def _match_payload(m: Match) -> dict:
+    return {
+        "id": m.id, "room_id": m.room_id, "game_slug": m.game_slug,
+        "status": m.status, "wager": m.wager, "player_a": m.player_a,
+        "player_b": m.player_b, "roll_a": m.roll_a, "roll_b": m.roll_b,
+        "winner_id": m.winner_id, "result": m.result,
+    }
+
+
+def _settle_match(db: Session, m: Match, winner_id: str | None) -> dict:
+    if m.wager > 0:
+        try:
+            lock_wager(db, m.id, m.player_a, m.player_b, m.wager)
+        except LedgerError:
+            pass
+        if winner_id is None:
+            try:
+                refund_wager(db, m.id, m.player_a, m.player_b, m.wager)
+            except LedgerError:
+                pass
+        else:
+            try:
+                settle_winner(db, m.id, winner_id, m.wager)
+            except LedgerError:
+                pass
+    m.status = "finished"
+    m.winner_id = winner_id
+    m.result = "draw" if winner_id is None else "win"
+    
+    # Set Room back to waiting
+    room = db.get(Room, m.room_id)
+    if room:
+        room.status = "waiting"
+        
+    db.commit()
+    try:
+        return award_match_xp(db, m)
+    except Exception:
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# LUDO
+# ---------------------------------------------------------------------------
+def _load_ludo_state(m: Match) -> LudoState:
+    data = json.loads(m.state_json)
+    players = [
+        PlayerState(user_id=p["user_id"], color=p["color"], tokens=list(p["tokens"]))
+        for p in data["players"]
     ]
-};
+    return LudoState(
+        players=players,
+        current_player_index=data["current_player_index"],
+        last_roll=data["last_roll"],
+        dice_rolled=data["dice_rolled"],
+        awaiting_token_choice=data["awaiting_token_choice"],
+        winner_user_id=data["winner_user_id"],
+        turn_number=data["turn_number"],
+        consecutive_sixes=data.get("consecutive_sixes", 0),
+    )
 
-// --- Voice Note Variables ---
-let mediaRecorder = null;
-let audioChunks = [];
-let isRecording = false;
-let recordingTarget = null;
+def _save_ludo_state(db: Session, m: Match, state: LudoState):
+    m.state_json = json.dumps(ludo_state_to_dict(state))
+    db.commit()
 
-// --- Typing Timeout ---
-let typingTimeout = null;
+def _start_ludo_match(db: Session, room: Room) -> Match | None:
+    members = db.query(RoomMember).filter(RoomMember.room_id == room.id).all()
+    n = len(members)
+    if n < 2 or n > 4:
+        return None
+    old = db.query(Match).filter(Match.room_id == room.id, Match.status.in_(["pending", "playing"])).all()
+    for m in old:
+        m.status = "closed"
+    user_ids = [m.user_id for m in members]
+    state = new_ludo_game(user_ids)
+    m = Match(
+        room_id=room.id, game_slug="ludo", status="playing", wager=room.wager or 0,
+        player_a=user_ids[0], player_b=user_ids[1], state_json=json.dumps(ludo_state_to_dict(state)),
+    )
+    room.status = "playing" # <-- Update room status
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return m
 
-const TAB_ACTIVE = "tab-btn flex-shrink-0 px-4 py-4 text-cyber-cyan border-b-2 border-cyber-cyan bg-cyber-cyan/5 transition";
-const TAB_IDLE = "tab-btn flex-shrink-0 px-4 py-4 text-slate-500 hover:text-slate-300 transition";
 
-function setActiveTab(tab) {
-  activeTab = tab;
-  document.querySelectorAll(".tab-btn").forEach((b) => { b.className = b.dataset.tab === activeTab ? TAB_ACTIVE : TAB_IDLE; });
-}
-
-// ---------------------------------------------------------
-// 1. WEBSOCKET CONNECTION
-// ---------------------------------------------------------
-function connectDMSocket() {
-  if (reconnectTimeout) clearTimeout(reconnectTimeout);
-  const token = api.getToken();
-  if (!token) return;
-
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${proto}//${location.host}/ws/dm?token=${encodeURIComponent(token)}`;
-
-  if (dmSocket) { dmSocket.onclose = null; dmSocket.close(); }
-  dmSocket = new WebSocket(url);
-
-  dmSocket.addEventListener("open", () => {
-    if (activeChatUserId) dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: activeChatUserId }));
-  });
-
-  dmSocket.addEventListener("message", async (ev) => {
-    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
-
-    if (msg.type === "dm:new") {
-      if (activeChatUserId === msg.sender_id || activeChatUserId === msg.recipient_id) {
-        addMessageToUI(msg);
-        if (msg.recipient_id === myId) dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: msg.sender_id }));
-      }
-      refreshAll();
+# ---------------------------------------------------------------------------
+# CHESS
+# ---------------------------------------------------------------------------
+def _new_chess_state(white_id: str, black_id: str) -> dict:
+    from app.services.games.chess import START_FEN
+    return {
+        "fen": START_FEN, "white_id": white_id, "black_id": black_id,
+        "moves": [], "sans": [], "resigned_by": None, "draw_offered_by": None,
     }
-    else if (msg.type === "group:new") {
-      if (activeGroupId && String(activeGroupId) === String(msg.group_id)) addMessageToUI(msg);
-      refreshAll();
-    }
-    else if (msg.type === "group:created") {
-      await refreshAll(); 
-      if (activeTab === "groups") renderList();
-      const toast = document.createElement("div");
-      toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-brand-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold animate-bounce cursor-pointer flex items-center gap-2";
-      toast.innerHTML = `👥 You were added to "<b>${escapeHTML(msg.group.name)}</b>"`;
-      toast.onclick = () => { setActiveTab("groups"); renderList(); toast.remove(); };
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 5000);
-    }
-    else if (msg.type === "dm:typing") {
-      if (activeChatUserId === msg.sender_id) {
-        const ind = $("typingIndicator");
-        if (ind) { ind.textContent = msg.is_typing ? "typing..." : ""; ind.classList.toggle("hidden", !msg.is_typing); }
-      }
-    }
-    else if (msg.type === "dm:seen") {
-      if (activeChatUserId === msg.reader_id) {
-        document.querySelectorAll(".msg-status.mine").forEach(el => { el.textContent = "✓✓"; el.classList.add("text-cyan-400"); });
-      }
-    }
-    else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer, !!msg.is_video);
-    else if (msg.type === "call:answer") {
-      if (pc) { clearTimeout(callTimeout); pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); }
-    }
-    else if (msg.type === "call:ice-candidate") { if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); }
-    else if (msg.type === "call:end") endCall();
-    else if (msg.type === "call:reject") {
-      if (currentCallTargetId) alert("Call was declined.");
-      endCall();
-    }
-  });
 
-  dmSocket.addEventListener("close", () => {
-    dmSocket = null;
-    reconnectTimeout = setTimeout(connectDMSocket, 3000);
-  });
-}
+def _load_chess_state(m: Match) -> dict:
+    return json.loads(m.state_json)
 
-// ---------------------------------------------------------
-// 2. UI RENDERING
-// ---------------------------------------------------------
-function timeAgo(iso) {
-  if (!iso) return "";
-  const diff = Math.max(0, Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return "now"; if (diff < 3600) return `${Math.floor(diff / 60)}m`; if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  return `${Math.floor(diff / 86400)}d`;
-}
-function escapeHTML(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
-function crownMark(isPremium) { return isPremium ? ' <span class="text-amber-400 text-xs">👑</span>' : ""; }
+def _save_chess_state(db: Session, m: Match, state: dict):
+    m.state_json = json.dumps(state)
+    db.commit()
 
-function openChatPanel() { document.body.classList.add("chat-open"); }
-function closeChatPanel() {
-  document.body.classList.remove("chat-open");
-  activeChatUserId = null;
-  activeGroupId = null;
-  $("chatMessages").innerHTML = "";
-  $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400">Select a conversation</div>`;
-  $("chatForm").classList.add("hidden");
-  renderList();
-}
-$("mobileBack").addEventListener("click", closeChatPanel);
+def _start_chess_match(db: Session, room: Room) -> Match | None:
+    members = db.query(RoomMember).filter(RoomMember.room_id == room.id).all()
+    if len(members) != 2:
+        return None
+    old = db.query(Match).filter(Match.room_id == room.id, Match.status.in_(["pending", "playing"])).all()
+    for m in old:
+        m.status = "closed"
+    white, black = members[0].user_id, members[1].user_id
+    state = _new_chess_state(white, black)
+    m = Match(
+        room_id=room.id, game_slug="chess", status="playing", wager=room.wager or 0,
+        player_a=white, player_b=black, state_json=json.dumps(state),
+    )
+    room.status = "playing" # <-- Update room status
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return m
 
-document.querySelectorAll(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    setActiveTab(btn.dataset.tab);
-    renderList();
-  });
-});
+def _find_legal_move_by_uci(board, uci: str):
+    for mv in legal_moves(board):
+        if mv.to_uci() == uci:
+            return mv
+    return None
 
-let searchTimeout = null;
-$("searchInput").addEventListener("input", (e) => {
-  clearTimeout(searchTimeout);
-  const q = e.target.value.trim();
-  if (!q) { searchResults = []; renderList(); return; }
-  searchTimeout = setTimeout(async () => { try { searchResults = await api.searchUsers(q); renderList(); } catch (err) { console.error(err); } }, 300);
-});
-
-function renderList() {
-  const list = $("listArea");
-  if (searchResults.length > 0 && $("searchInput").value.trim()) {
-    list.innerHTML = searchResults.map((u) => {
-      const rel = u.relationship;
-      let action = "";
-      if (rel === "self") action = `<span class="text-xs text-slate-500">You</span>`;
-      else if (rel === "friends") action = `<button data-act="chat" data-id="${u.id}" data-username="${escapeHTML(u.username)}" data-avatar="${u.avatar_id}" data-premium="${u.is_premium ? '1' : '0'}" class="text-xs px-2.5 py-1.5 rounded bg-brand-600 hover:bg-brand-700">Message</button>`;
-      else if (rel === "pending_out") action = `<span class="text-xs text-amber-400">Sent</span>`;
-      else if (rel === "pending_in") action = `<button data-act="accept" data-id="${u.id}" class="text-xs px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700">Accept</button>`;
-      else action = `<button data-act="add" data-id="${u.id}" class="text-xs px-2.5 py-1.5 rounded bg-brand-600 hover:bg-brand-700">+ Add</button>`;
-      return `
-        <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50">
-          <div class="flex-shrink-0">${avatarHTML(u.avatar_id, "sm", u.frame_color, u.is_premium)}</div>
-          <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate">${escapeHTML(u.username)}${crownMark(u.is_premium)}</div><div class="text-xs text-slate-500">Level ${u.level}</div></div>
-          ${action}
-        </div>`;
-    }).join("");
-    wireRowButtons(); return;
-  }
-
-  if (activeTab === "friends") {
-    if (friends.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No friends yet.</div>`; return; }
-    list.innerHTML = friends.map((f) => `
-      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50">
-        <div class="flex-shrink-0 cursor-pointer" data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}">${avatarHTML(f.avatar_id, "sm", f.frame_color, f.is_premium)}</div>
-        <div class="flex-1 min-w-0">
-          <div class="text-sm font-semibold truncate flex items-center gap-1">${escapeHTML(f.username)}${crownMark(f.is_premium)} ${f.streak_count > 0 ? `<span class="text-orange-500 font-bold text-[10px]">🔥 ${f.streak_count}</span>` : ""}</div>
-          <div class="text-xs text-slate-500">Level ${f.level}</div>
-        </div>
-        <button data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}" class="text-xs px-2 py-1.5 rounded bg-brand-600 hover:bg-brand-700 text-white font-bold transition">Chat</button>
-      </div>`).join("");
-    wireFriendRows(); return;
-  }
-
-  if (activeTab === "groups") {
-    if (groups.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No groups yet. Click + to create one.</div>`; return; }
-    list.innerHTML = groups.map((g) => `
-      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 cursor-pointer" data-group-chat="${g.id}" data-group-name="${escapeHTML(g.name)}">
-        <div class="h-10 w-10 rounded-full bg-slate-700 flex items-center justify-center text-lg">👥</div>
-        <div class="flex-1 min-w-0">
-          <div class="text-sm font-semibold text-slate-200 truncate">${escapeHTML(g.name)}</div>
-          <div class="text-xs text-slate-500">${g.member_count} members</div>
-        </div>
-        <button class="text-xs px-2 py-1.5 rounded bg-slate-800 border border-slate-700 hover:bg-brand-600 text-white font-bold transition">Open</button>
-      </div>`).join("");
-    wireGroupRows(); return;
-  }
-
-  if (activeTab === "requests") {
-    if (requests.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No pending requests.</div>`; return; }
-    list.innerHTML = requests.map((r) => `
-      <div class="flex items-center gap-3 px-4 py-3 border-b border-slate-800/50">
-        <div class="flex-shrink-0">${avatarHTML(r.avatar_id, "sm", r.frame_color, r.is_premium)}</div>
-        <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate">${escapeHTML(r.username)}${crownMark(r.is_premium)}</div><div class="text-xs text-slate-500">Level ${r.level}</div></div>
-        <div class="flex gap-1">
-          <button data-act="accept" data-id="${r.user_id}" class="text-xs px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700">✓</button>
-          <button data-act="decline" data-id="${r.user_id}" class="text-xs px-2.5 py-1.5 rounded bg-slate-700 hover:bg-slate-600">✕</button>
-        </div>
-      </div>`).join("");
-    wireRowButtons(); return;
-  }
-
-  if (activeTab === "chats") {
-    if (conversations.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No conversations yet.</div>`; return; }
-    list.innerHTML = conversations.map((c) => `
-      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 cursor-pointer" data-chat="${c.user_id}" data-username="${escapeHTML(c.username)}" data-avatar="${c.avatar_id}" data-premium="${c.is_premium ? '1' : '0'}">
-        <div class="flex-shrink-0">${avatarHTML(c.avatar_id, "sm", c.frame_color, c.is_premium)}</div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center justify-between">
-            <div class="text-sm font-semibold truncate flex items-center gap-1">${escapeHTML(c.username)}${crownMark(c.is_premium)} ${c.streak > 0 ? `<span class="text-orange-500 font-bold text-[10px]">🔥 ${c.streak}</span>` : ""}</div>
-            <div class="text-[10px] text-slate-500">${timeAgo(c.last_at)}</div>
-          </div>
-          <div class="flex items-center justify-between mt-0.5">
-            <div class="text-xs text-slate-500 truncate">${escapeHTML(c.last_message)}</div>
-            ${c.unread_count > 0 ? `<span class="ml-2 px-1.5 py-0.5 rounded bg-red-500 text-white text-[10px] font-bold">${c.unread_count}</span>` : ""}
-          </div>
-        </div>
-      </div>`).join("");
-    wireFriendRows(); return;
-  }
-}
-
-function wireRowButtons() {
-  document.querySelectorAll("[data-act]").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const id = btn.dataset.id, act = btn.dataset.act;
-      try {
-        if (act === "add") await api.sendFriendRequest(id);
-        else if (act === "accept") await api.acceptFriend(id);
-        else if (act === "decline") await api.declineFriend(id);
-        else if (act === "chat") { openChat(id, btn.dataset.username, btn.dataset.avatar, btn.dataset.premium === "1"); return; }
-        await refreshAll();
-        const q = $("searchInput").value.trim();
-        if (q) searchResults = await api.searchUsers(q);
-        renderList();
-      } catch (err) { alert(err.message); }
-    });
-  });
-}
-
-function wireFriendRows() {
-  document.querySelectorAll("[data-chat]").forEach((row) => {
-    row.addEventListener("click", () => openChat(row.dataset.chat, row.dataset.username, row.dataset.avatar, row.dataset.premium === "1"));
-  });
-}
-
-function wireGroupRows() {
-  document.querySelectorAll("[data-group-chat]").forEach((row) => {
-    row.addEventListener("click", () => openGroupChat(row.dataset.groupChat, row.dataset.groupName));
-  });
-}
-
-// ---------------------------------------------------------
-// 3. CHAT ROOM LOGIC
-// ---------------------------------------------------------
-async function openChat(userId, username, avatarId, isPremium) {
-  activeChatUserId = userId;
-  activeGroupId = null;
-  openChatPanel();
-
-  $("chatHeaderContent").innerHTML = `
-    <div class="flex items-center justify-between w-full">
-      <div class="flex items-center gap-3">
-        ${avatarHTML(avatarId, "sm", null, isPremium)}
-        <div>
-          <div class="text-sm font-bold text-slate-100 flex items-center gap-1">${escapeHTML(username)}${crownMark(isPremium)}</div>
-          <div id="typingIndicator" class="text-[10px] text-brand-400 hidden"></div>
-        </div>
-      </div>
-      <div class="flex items-center gap-1">
-        <button id="startAudioCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Audio Call">📞</button>
-        <button id="startVideoCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Video Call">📹</button>
-        <button id="inviteGameBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Challenge">⚔️</button>
-      </div>
-    </div>`;
-
-  $("chatForm").classList.remove("hidden");
-  await loadMessages();
-
-  if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: activeChatUserId }));
-  $("chatInput").focus();
-
-  $("startAudioCallBtn").onclick = () => initiateCall(userId, false, username, avatarId, isPremium);
-  $("startVideoCallBtn").onclick = () => initiateCall(userId, true, username, avatarId, isPremium);
-  $("inviteGameBtn").onclick = () => showChallengeModal(userId, username);
-}
-
-async function openGroupChat(groupId, groupName) {
-  activeGroupId = groupId;
-  activeChatUserId = null;
-  openChatPanel();
-
-  $("chatHeaderContent").innerHTML = `
-    <div class="flex items-center gap-3">
-      <div class="h-10 w-10 rounded-full bg-slate-700 flex items-center justify-center text-lg">👥</div>
-      <div class="text-sm font-bold text-slate-100">${escapeHTML(groupName)}</div>
-    </div>`;
-
-  $("chatForm").classList.remove("hidden");
-
-  try {
-    const msgs = await api.request(`/api/v1/groups/${groupId}/messages`);
-    const el = $("chatMessages");
-    el.innerHTML = "";
-    for (const m of msgs) addMessageToUI(m);
-    el.scrollTop = el.scrollHeight;
-  } catch (err) { console.error(err); }
-
-  $("chatInput").focus();
-}
-
-async function loadMessages() {
-  if (!activeChatUserId) return;
-  try {
-    const msgs = await api.getConversation(activeChatUserId);
-    const el = $("chatMessages");
-    el.innerHTML = "";
-    for (const m of msgs) addMessageToUI(m);
-    el.scrollTop = el.scrollHeight;
-  } catch (err) { console.error(err); }
-}
-
-function addMessageToUI(m) {
-  const el = $("chatMessages");
-  const mine = m.sender_id === myId;
-
-  const wrap = document.createElement("div");
-  wrap.className = mine ? "flex flex-col items-end mb-2" : "flex flex-col items-start mb-2";
-
-  let senderHtml = "";
-  if (m.group_id && !mine) {
-    const name = m.sender_username || friends.find(f => String(f.id) === String(m.sender_id))?.username || "Member";
-    senderHtml = `<div class="text-[10px] text-cyber-cyan font-bold mb-0.5 px-1">${escapeHTML(name)}</div>`;
-  }
-
-  let replyHtml = m.reply_to_status_id ? `<div class="text-[10px] text-brand-400 mb-1 px-2 border-l-2 border-brand-500">Replied to a status</div>` : "";
-
-  let contentHtml = "";
-  if (m.media_url && m.media_url.startsWith("challenge:")) {
-      const parts = m.media_url.split(":");
-      const gameSlug = parts[1];
-      const roomCode = parts[2];
-      const gameName = gameSlug.charAt(0).toUpperCase() + gameSlug.slice(1);
-      contentHtml = `
-        <div class="rounded-xl border-2 border-cyber-pink bg-slate-900 p-4 min-w-[220px] shadow-[0_0_20px_rgba(236,72,153,0.3)]">
-            <div class="text-center mb-3">
-                <span class="text-3xl">⚔️</span>
-                <div class="text-white font-bold text-sm mt-1">${escapeHTML(m.content)}</div>
-            </div>
-            <button onclick="window.location.href='/room?id=${roomCode}'" class="w-full bg-cyber-pink hover:bg-pink-500 text-white font-bold py-2 rounded-lg transition shadow-lg">
-                Join Match
-            </button>
-        </div>
-      `;
-  } 
-  else if (m.content && (m.content.includes("Missed audio call") || m.content.includes("Missed video call"))) {
-    contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
-  } 
-  else if (m.content) {
-    contentHtml = `<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>`;
-  }
-
-  let mediaHtml = "";
-  if (m.media_url && !m.media_url.startsWith("challenge:")) {
-    const safeUrl = escapeHTML(m.media_url);
-    if (m.media_url.match(/\.(mp4|webm|ogg|mov|mp3|wav|m4a)$/i)) {
-      mediaHtml = `<audio src="${safeUrl}" controls class="mt-2 w-48"></audio>`;
-    } else {
-      mediaHtml = `<img src="${safeUrl}" class="max-w-[200px] rounded-xl mt-1 border border-slate-700" />`;
-    }
-  }
-
-  let statusHtml = mine ? `<div class="text-[10px] text-slate-500 mt-0.5"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> · ${timeAgo(m.created_at)}</div>` : `<div class="text-[10px] text-slate-500 mt-0.5">${timeAgo(m.created_at)}</div>`;
-
-  if (m.read && mine) {
-    setTimeout(() => { const s = wrap.querySelector('.msg-status'); if (s) s.classList.add("text-cyan-400"); }, 10);
-  }
-
-  wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}`;
-  el.appendChild(wrap);
-  el.scrollTop = el.scrollHeight;
-}
-
-$("chatInput").addEventListener("input", () => {
-  if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN || !activeChatUserId) return;
-  const target = activeChatUserId;
-  dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: target, is_typing: true }));
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => { if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: target, is_typing: false })); }, 2000);
-});
-
-function currentTarget() {
-  return { groupId: activeGroupId, userId: activeChatUserId };
-}
-
-function sendToTarget(target, { content = "", media_url = null }) {
-  if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) throw new Error("Not connected");
-  if (target.groupId) {
-    dmSocket.send(JSON.stringify({ type: "group:send", group_id: target.groupId, content, media_url }));
-  } else if (target.userId) {
-    dmSocket.send(JSON.stringify({ type: "dm:send", target_id: target.userId, content, media_url }));
-  }
-}
-
-async function uploadMedia(file) {
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch("/api/v1/dm/upload", {
-    method: "POST",
-    headers: { "Authorization": "Bearer " + api.getToken() },
-    body: formData
-  });
-  if (!res.ok) throw new Error("Upload failed");
-  const data = await res.json();
-  return data.url;
-}
-
-$("chatForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const text = $("chatInput").value.trim();
-  if (!text || (!activeChatUserId && !activeGroupId)) return;
-
-  if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) {
-    alert("Connecting to chat server... Please wait a second.");
-    return;
-  }
-
-  $("chatInput").value = "";
-  const target = currentTarget();
-  sendToTarget(target, { content: text });
-  if (target.userId) {
-    dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: target.userId, is_typing: false }));
-  }
-});
-
-$("chatImageInput").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  const target = currentTarget();
-  e.target.value = "";
-  if (!file || (!target.userId && !target.groupId)) return;
-
-  try {
-    const url = await uploadMedia(file);
-    sendToTarget(target, { media_url: url });
-  } catch (err) {
-    alert("Could not upload image.");
-  }
-});
-
-function showChallengeModal(targetId, targetName) {
-    const modal = document.createElement("div");
-    modal.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
-    modal.innerHTML = `
-      <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl text-center">
-        <h3 class="text-white font-bold text-lg mb-4">Challenge ${escapeHTML(targetName)}</h3>
-        <div class="grid grid-cols-3 gap-2 mb-6">
-            <button data-game="ludo" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
-                <span class="text-2xl">🎯</span><span class="text-xs font-bold text-white">Ludo</span>
-            </button>
-            <button data-game="whot" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
-                <span class="text-2xl">🃏</span><span class="text-xs font-bold text-white">Whot</span>
-            </button>
-            <button data-game="chess" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
-                <span class="text-2xl">♟️</span><span class="text-xs font-bold text-white">Chess</span>
-            </button>
-        </div>
-        <button id="cancelChallengeBtn" class="w-full py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
-      </div>
-    `;
-    document.body.appendChild(modal);
-
-    modal.querySelector("#cancelChallengeBtn").onclick = () => modal.remove();
-
-    modal.querySelectorAll(".challenge-game-btn").forEach(btn => {
-        btn.onclick = async () => {
-            const gameSlug = btn.dataset.game;
-            btn.innerHTML = `<span class="text-xs text-white">Creating...</span>`;
-            try {
-                const res = await api.createRoom({ game_slug: gameSlug, max_players: 2, is_public: false });
-                const gameName = gameSlug.charAt(0).toUpperCase() + gameSlug.slice(1);
-                dmSocket.send(JSON.stringify({
-                    type: "dm:challenge",
-                    target_id: targetId,
-                    content: `challenged you to ${gameName}!`,
-                    game_slug: gameSlug,
-                    room_code: res.id
-                }));
-                modal.remove();
-            } catch (err) {
-                alert("Failed to create game room: " + err.message);
-                btn.innerHTML = `<span class="text-xs font-bold text-white">${gameSlug}</span>`;
-            }
-        };
-    });
-}
-
-// --- CREATE GROUP MODAL LOGIC ---
-$("createGroupBtn").addEventListener("click", () => {
-  if (friends.length === 0) return alert("Add friends first to create a group.");
-
-  const modal = document.createElement("div");
-  modal.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
-  modal.innerHTML = `
-    <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl">
-      <h3 class="text-white font-bold text-lg mb-4">Create Group</h3>
-      <input type="text" id="groupNameInput" placeholder="Group Name" maxlength="50" class="w-full bg-slate-800 text-white rounded-lg p-3 text-sm focus:outline-none border border-slate-700 mb-4" />
-      <div class="max-h-48 overflow-y-auto mb-4 space-y-2">
-        ${friends.map(f => `
-          <label class="flex items-center gap-3 p-2 rounded bg-slate-800/50 cursor-pointer hover:bg-slate-800">
-            <input type="checkbox" value="${f.id}" class="group-member-cb w-4 h-4 accent-brand-500">
-            ${avatarHTML(f.avatar_id, "sm")}
-            <span class="text-sm text-white">${escapeHTML(f.username)}</span>
-          </label>
-        `).join("")}
-      </div>
-      <div class="flex gap-2">
-        <button id="cancelGroupBtn" class="flex-1 py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
-        <button id="createGroupSubmit" class="flex-1 py-2.5 rounded-lg bg-brand-600 text-white font-bold text-sm">Create</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-
-  modal.querySelector("#cancelGroupBtn").onclick = () => modal.remove();
-  modal.querySelector("#createGroupSubmit").onclick = async () => {
-    const name = modal.querySelector("#groupNameInput").value.trim();
-    const selected = Array.from(modal.querySelectorAll(".group-member-cb:checked")).map(cb => cb.value);
-
-    if (!name || selected.length === 0) return alert("Enter name and select members.");
-
-    try {
-      await api.request("/api/v1/groups", { method: "POST", body: { name, member_ids: selected } });
-      modal.remove();
-      setActiveTab("groups");
-      await refreshAll();
-      renderList();
-    } catch (err) {
-      alert("Failed to create group: " + err.message);
-    }
-  };
-});
-
-// --- VOICE NOTE LOGIC ---
-$("voiceNoteBtn").addEventListener("click", async () => {
-  if (!activeChatUserId && !activeGroupId && !isRecording) return;
-
-  if (isRecording) {
-    mediaRecorder.stop();
-    isRecording = false;
-    $("micIcon").textContent = "🎤";
-    $("micIcon").classList.remove("text-red-500", "animate-pulse");
-  } else {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
-      recordingTarget = currentTarget();
-
-      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const target = recordingTarget;
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const file = new File([audioBlob], "voice_note.webm", { type: "audio/webm" });
-
-        try {
-          const url = await uploadMedia(file);
-          sendToTarget(target, { media_url: url });
-        } catch (err) {
-          alert("Could not upload voice note.");
+def _update_chess_elo(db: Session, st: dict, outcome: str) -> dict:
+    try:
+        white, black = db.get(User, st["white_id"]), db.get(User, st["black_id"])
+        if not white or not black or not white.profile or not black.profile:
+            return {}
+        wa, ba = _elo_of(white), _elo_of(black)
+        wg, bg = white.profile.chess_games_played or 0, black.profile.chess_games_played or 0
+        elo_outcome = "a_win" if outcome == "w" else ("b_win" if outcome == "b" else "draw")
+        new_w, new_b = elo_new_ratings(wa, ba, wg, bg, elo_outcome)
+        white.profile.elo_rating = new_w
+        black.profile.elo_rating = new_b
+        white.profile.chess_games_played = wg + 1
+        black.profile.chess_games_played = bg + 1
+        if outcome == "w":
+            white.profile.chess_wins = (white.profile.chess_wins or 0) + 1
+            black.profile.chess_losses = (black.profile.chess_losses or 0) + 1
+        elif outcome == "b":
+            black.profile.chess_wins = (black.profile.chess_wins or 0) + 1
+            white.profile.chess_losses = (white.profile.chess_losses or 0) + 1
+        else:
+            white.profile.chess_draws = (white.profile.chess_draws or 0) + 1
+            black.profile.chess_draws = (black.profile.chess_draws or 0) + 1
+        db.commit()
+        return {
+            "white": {"before": wa, "after": new_w, "delta": new_w - wa, "tier": elo_tier(new_w)},
+            "black": {"before": ba, "after": new_b, "delta": new_b - ba, "tier": elo_tier(new_b)},
         }
-      };
+    except Exception as e:
+        print(f"[elo update error] {e}")
+        db.rollback()
+        return {}
 
-      mediaRecorder.start();
-      isRecording = true;
-      $("micIcon").textContent = "⏹️";
-      $("micIcon").classList.add("text-red-500", "animate-pulse");
-    } catch (err) {
-      alert("Microphone access denied. Check browser permissions.");
-    }
-  }
-});
 
-// ---------------------------------------------------------
-// 4. WEBRTC CALLING SYSTEM (FIXED)
-// ---------------------------------------------------------
-function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
-  if ($("videoCallOverlay")) $("videoCallOverlay").remove();
-  
-  const overlay = document.createElement("div");
-  overlay.id = "videoCallOverlay";
-  overlay.className = "fixed inset-0 z-[999] bg-[#0b141a] flex flex-col items-center justify-between";
+# ---------------------------------------------------------------------------
+# WHOT
+# ---------------------------------------------------------------------------
+def _load_whot_state(m: Match) -> WhotState:
+    return whot_state_from_dict(json.loads(m.state_json))
 
-  const header = `
-    <div class="relative z-10 w-full p-6 flex justify-between items-center">
-      <button class="opacity-0 w-12 h-12"></button>
-      <div class="text-center">
-        <div class="text-white font-bold text-2xl flex items-center justify-center gap-2">${escapeHTML(targetName)} ${isPremium ? "👑" : ""}</div>
-        <div id="callTimer" class="text-slate-400 text-sm mt-1">Connecting...</div>
-      </div>
-      <button class="opacity-0 w-12 h-12"></button>
-    </div>
-  `;
+def _save_whot_state(db: Session, m: Match, state: WhotState):
+    m.state_json = json.dumps(whot_full_state(state)) 
+    db.commit()
 
-  // The remote audio element is ALWAYS needed, even for video calls
-  let audioHtml = `<audio id="remoteAudio" autoplay playsinline></audio>`;
+def _start_whot_match(db: Session, room: Room) -> Match | None:
+    members = db.query(RoomMember).filter(RoomMember.room_id == room.id).all()
+    n = len(members)
+    if n < 2 or n > 4:
+        return None
+    old = db.query(Match).filter(Match.room_id == room.id, Match.status.in_(["pending", "playing"])).all()
+    for m in old:
+        m.status = "closed"
+    user_ids = [m.user_id for m in members]
+    state = new_whot_game(user_ids)
+    m = Match(
+        room_id=room.id, game_slug="whot", status="playing", wager=room.wager or 0,
+        player_a=user_ids[0], player_b=user_ids[1], 
+        state_json=json.dumps(whot_full_state(state)),
+    )
+    room.status = "playing" # <-- Update room status
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return m
 
-  if (isVideo) {
-    overlay.innerHTML = `
-      ${audioHtml}
-      <video id="remoteVideo" autoplay playsinline class="absolute inset-0 w-full h-full object-cover z-0"></video>
-      ${header}
-      <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-slate-700 shadow-2xl z-20 transition-all"></video>
-      
-      <div class="relative z-10 mb-8 bg-[#1f2c33]/90 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-6 shadow-2xl">
-        <button id="btnToggleVideo" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button>
-        <button id="btnMute" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button>
-        <button id="btnEnd" class="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center text-white text-2xl shadow-lg shadow-red-500/50">📞</button>
-      </div>
-    `;
-  } else {
-    overlay.innerHTML = `
-      ${audioHtml}
-      <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-      ${header}
-      <div class="relative z-10 flex-1 flex flex-col items-center justify-center">
-        <div class="w-40 h-40 rounded-full border-4 border-slate-700 overflow-hidden shadow-[0_0_50px_rgba(255,255,255,0.1)]">${avatarHTML(targetAvatar, "xl")}</div>
-      </div>
-      <div class="relative z-10 mb-12 bg-[#1f2c33]/90 backdrop-blur-md w-11/12 max-w-sm px-6 py-6 rounded-3xl grid grid-cols-3 gap-6 shadow-2xl">
-        <div class="flex flex-col items-center gap-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🔊</button><span class="text-xs text-slate-300">Speaker</span></div>
-        <div class="flex flex-col items-center gap-2"><button id="btnToggleVideo" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button><span class="text-xs text-slate-300">Video</span></div>
-        <div class="flex flex-col items-center gap-2"><button id="btnMute" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button><span class="text-xs text-slate-300">Mute</span></div>
-        <div class="flex flex-col items-center gap-2 mt-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">•••</button><span class="text-xs text-slate-300">More</span></div>
-        <div class="flex flex-col items-center gap-2 mt-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">↗</button><span class="text-xs text-slate-300">Share</span></div>
-        <div class="flex flex-col items-center gap-2 mt-2"><button id="btnEnd" class="w-14 h-14 rounded-full bg-red-500 flex items-center justify-center text-white text-xl shadow-lg shadow-red-500/50">📞</button><span class="text-xs text-slate-300 text-red-500 font-bold">End</span></div>
-      </div>
-    `;
-  }
-  document.body.appendChild(overlay);
 
-  // Force audio playback (mobile browsers block it sometimes)
-  setTimeout(() => {
-      const audioEl = $("remoteAudio");
-      if (audioEl && remoteStream) {
-          audioEl.srcObject = remoteStream;
-          audioEl.play().catch(e => {
-              console.log("Autoplay blocked, showing unmute button", e);
-              // If blocked, show a prompt to tap the screen
-              const prompt = document.createElement("div");
-              prompt.className = "absolute inset-0 z-[9999] bg-black/80 flex items-center justify-center text-white font-bold text-lg cursor-pointer";
-              prompt.textContent = "Tap to unmute";
-              prompt.onclick = () => { audioEl.play(); prompt.remove(); };
-              overlay.appendChild(prompt);
-          });
-      }
-  }, 500);
+# ---------------------------------------------------------------------------
+# WEBSOCKET
+# ---------------------------------------------------------------------------
+@router.websocket("/ws/room/{room_id}")
+async def room_ws(
+    ws: WebSocket,
+    room_id: str,
+    token: str = Query(...),
+    reconnect_token: str | None = Query(None),
+    spectator: bool = Query(False), # <-- NEW SPECTATOR FLAG
+):
+    try:
+        payload = decode_token(token)
+    except jwt.PyJWTError:
+        await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
 
-  $("btnEnd").onclick = endCall;
+    user_id = payload.get("sub")
+    if not user_id:
+        await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
 
-  // Toggle Mute
-  isMuted = false;
-  $("btnMute").onclick = () => {
-    if (localStream) {
-      const audioTrack = localStream.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        isMuted = !audioTrack.enabled;
-        $("btnMute").classList.toggle("bg-white", isMuted);
-        $("btnMute").classList.toggle("text-black", isMuted);
-      }
-    }
-  };
+    db: Session = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        room = db.get(Room, room_id)
+        if not user or not room or user.is_banned:
+            await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+            
+        members = db.query(RoomMember).filter(RoomMember.room_id == room_id).all()
+        
+        if spectator:
+            if room.status != "playing":
+                await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+        else:
+            if user_id not in {m.user_id for m in members}:
+                # --- FIX: AUTO-JOIN IF ROOM IS WAITING AND HAS SPACE ---
+                if room.status == "waiting" and len(members) < (room.max_players or 4):
+                    new_member = RoomMember(room_id=room_id, user_id=user_id)
+                    db.add(new_member)
+                    db.commit()
+                    members = db.query(RoomMember).filter(RoomMember.room_id == room_id).all()
+                else:
+                    await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+                    return
+            # --- FIX END ---
 
-  // Toggle Video / Audio Mode
-  $("btnToggleVideo").onclick = async () => {
-      if (!localStream) return;
-      
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-          // Switch to Audio Only
-          videoTrack.enabled = false;
-          if ($("localVideo")) $("localVideo").style.display = "none";
-          if ($("remoteVideo")) $("remoteVideo").style.display = "none";
-          $("btnToggleVideo").textContent = "📹";
-      } else {
-          // Switch to Video
-          try {
-              const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-              const newVideoTrack = stream.getVideoTracks()[0];
-              localStream.addTrack(newVideoTrack);
-              
-              if (pc) {
-                  const senders = pc.getSenders();
-                  const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-                  if (videoSender) videoSender.replaceTrack(newVideoTrack);
-                  else pc.addTrack(newVideoTrack, localStream);
-              }
-              
-              if ($("localVideo")) {
-                  $("localVideo").style.display = "block";
-                  $("localVideo").srcObject = localStream;
-              }
-              if ($("remoteVideo")) $("remoteVideo").style.display = "block";
-              $("btnToggleVideo").textContent = "📵";
-          } catch (e) { alert("Camera access denied."); }
-      }
-  };
-}
+            if reconnect_token and not presence_svc.validate_token(db, room_id, user_id, reconnect_token):
+                await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
 
-let callTimerInterval = null;
-let callSeconds = 0;
-
-function startCallTimer() {
-  clearInterval(callTimerInterval);
-  callSeconds = 0;
-  callTimerInterval = setInterval(() => {
-    callSeconds++;
-    const mins = String(Math.floor(callSeconds / 60)).padStart(2, '0');
-    const secs = String(callSeconds % 60).padStart(2, '0');
-    if ($("callTimer")) $("callTimer").textContent = `${mins}:${secs}`;
-  }, 1000);
-}
-
-function stopCallTimer() { clearInterval(callTimerInterval); }
-
-async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremium) {
-  try {
-    isVideoCall = isVideo;
-    createVideoOverlay(isVideo, targetName, targetAvatar, isPremium);
-    currentCallTargetId = targetId;
-
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
-    if ($("localVideo")) $("localVideo").srcObject = localStream;
-
-    pc = new RTCPeerConnection(ICE_SERVERS);
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-    pc.ontrack = (event) => {
-      if (!remoteStream) remoteStream = new MediaStream();
-      remoteStream.addTrack(event.track);
-
-      if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
-      if ($("remoteAudio")) $("remoteAudio").srcObject = remoteStream;
-
-      stopRingtone();
-      startCallTimer();
-    };
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-        dmSocket.send(JSON.stringify({ type: "call:ice-candidate", target_id: targetId, candidate: event.candidate }));
-      }
-    };
-
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-      dmSocket.send(JSON.stringify({ type: "call:offer", target_id: targetId, offer: offer, is_video: isVideo }));
-    }
-
-    callTimeout = setTimeout(() => {
-      if (currentCallTargetId) {
-        alert("User is offline or didn't answer.");
-        if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-          dmSocket.send(JSON.stringify({ type: "call:end", target_id: targetId, call_type: isVideo ? 'video' : 'audio', is_missed: true }));
+        members_payload = [_member_payload(db, m) for m in members]
+        msgs = db.query(Message).filter(Message.room_id == room_id).order_by(Message.created_at.desc()).limit(50).all()
+        msgs_payload = [{"id": m.id, "sender_id": m.sender_id, "content": m.content, "created_at": m.created_at.isoformat()} for m in reversed(msgs)]
+        room_meta = {
+            "id": room.id, "game_slug": room.game_slug, "status": room.status, "wager": room.wager,
+            "code": room.code, "tournament_match_id": room.tournament_match_id, "is_public": room.is_public,
         }
-        endCall();
-      }
-    }, 30000);
+        
+        pending = _ensure_pending_match(db, room)
+        match_payload = _match_payload(pending) if pending else None
 
-  } catch (err) {
-    console.error("WEBCAM ERROR:", err);
-    if (err.name === 'NotAllowedError') {
-      alert("You blocked the camera/microphone. Click the Lock icon in the URL bar and allow them.");
-    } else {
-      alert("Could not access camera/microphone: " + err.message);
-    }
-    endCall();
-  }
-}
+        ludo_state = chess_state = whot_state = None
+        if pending and pending.state_json:
+            if pending.game_slug == "ludo":
+                ludo_state = json.loads(pending.state_json)
+            elif pending.game_slug == "chess":
+                chess_state = json.loads(pending.state_json)
+                try:
+                    board = from_fen(chess_state["fen"])
+                    chess_state["board"] = chess_state_to_dict(board)
+                    w_user, b_user = db.get(User, chess_state["white_id"]), db.get(User, chess_state["black_id"])
+                    chess_state["white_tier"] = elo_tier(_elo_of(w_user))
+                    chess_state["black_tier"] = elo_tier(_elo_of(b_user))
+                except Exception:
+                    chess_state["board"] = None
+            elif pending.game_slug == "whot":
+                viewer = "spectator" if spectator else user_id
+                whot_state = whot_state_to_dict(_load_whot_state(pending), viewer)
+    finally:
+        db.close()
 
-function showIncomingCall(senderId, offer, isVideo) {
-  playRingtone();
-  const modal = document.createElement("div");
-  incomingCallModal = modal;
-  modal.className = "fixed inset-0 z-[9999] bg-[#0b141a] flex flex-col items-center justify-between p-8";
-  const caller = friends.find(f => String(f.id) === String(senderId)) || { username: "Unknown", avatar_id: "fox", is_premium: false };
+    await ws.accept()
 
-  modal.innerHTML = `
-    <div class="text-center mt-12 w-full">
-      <div class="text-slate-400 text-sm mb-2">Incoming ${isVideo ? 'Video' : 'Audio'} Call...</div>
-      <div class="w-40 h-40 mx-auto rounded-full border-4 border-slate-700 overflow-hidden shadow-2xl animate-pulse">${avatarHTML(caller.avatar_id, "xl", null, caller.is_premium)}</div>
-      <div class="text-white font-bold text-3xl mt-6">${escapeHTML(caller.username)}</div>
-    </div>
-    <div class="w-full max-w-sm flex justify-between mb-12">
-      <div class="flex flex-col items-center gap-2">
-        <button id="rejectCallBtn" class="bg-red-500 w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-xl hover:scale-105 transition">✖</button>
-        <span class="text-xs text-slate-400 font-bold">Decline</span>
-      </div>
-      <div class="flex flex-col items-center gap-2">
-        <button id="acceptCallBtn" class="bg-emerald-500 w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-xl animate-bounce hover:scale-105 transition">📞</button>
-        <span class="text-xs text-slate-400 font-bold">Accept</span>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
+    if not spectator:
+        db_p = SessionLocal()
+        try:
+            issue_token = presence_svc.get_or_create_token(db_p, room_id, user_id)
+            await presence_svc.mark_online(db_p, room_id, user_id, reconnect_token or issue_token)
+        finally:
+            db_p.close()
+    else:
+        issue_token = None
 
-  $("rejectCallBtn").onclick = () => {
-    stopRingtone();
-    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:reject", target_id: senderId, call_type: isVideo ? 'video' : 'audio' }));
-    modal.remove();
-    incomingCallModal = null;
-  };
+    await hub.join(room_id, user_id, ws, spectator=spectator)
 
-  $("acceptCallBtn").onclick = async () => {
-    stopRingtone();
-    modal.remove();
-    incomingCallModal = null;
-    currentCallTargetId = senderId;
-    isVideoCall = isVideo;
+    await ws.send_text(json.dumps({
+        "type": "room:init",
+        "you": user_id,
+        "is_spectator": spectator,
+        "reconnect_token": issue_token,
+        "room": room_meta,
+        "members": members_payload,
+        "messages": msgs_payload,
+        "match": match_payload,
+        "ludo_state": ludo_state,
+        "chess_state": chess_state,
+        "whot_state": whot_state,
+    }))
 
-    createVideoOverlay(isVideo, caller.username, caller.avatar_id, caller.is_premium);
+    if not spectator:
+        await hub.publish(room_id, {"type": "room:player_joined", "user_id": user_id}, exclude=user_id)
 
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
-      if ($("localVideo")) $("localVideo").srcObject = localStream;
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
 
-      pc = new RTCPeerConnection(ICE_SERVERS);
-      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            mtype = msg.get("type")
 
-      pc.ontrack = (event) => {
-        if (!remoteStream) remoteStream = new MediaStream();
-        remoteStream.addTrack(event.track);
-        if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
-        if ($("remoteAudio")) $("remoteAudio").srcObject = remoteStream;
-        startCallTimer();
-      };
+            if mtype == "presence:ping":
+                if spectator: 
+                    await ws.send_text(json.dumps({"type": "presence:pong"}))
+                    continue
+                db_h: Session = SessionLocal()
+                try:
+                    await presence_svc.mark_online(db_h, room_id, user_id)
+                finally:
+                    db_h.close()
+                await ws.send_text(json.dumps({"type": "presence:pong"}))
+                continue
 
-      pc.onicecandidate = (event) => {
-        if (event.candidate && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-          dmSocket.send(JSON.stringify({ type: "call:ice-candidate", target_id: senderId, candidate: event.candidate }));
-        }
-      };
+            if mtype == "ping":
+                await ws.send_text(json.dumps({"type": "pong"}))
+                continue
+                
+            if spectator and mtype != "chat:send":
+                continue
 
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+            elif mtype == "chat:send":
+                content = (msg.get("content") or "").strip()[:500]
+                if not content:
+                    continue
+                db2: Session = SessionLocal()
+                try:
+                    mm = Message(room_id=room_id, sender_id=user_id, content=content)
+                    db2.add(mm)
+                    db2.commit()
+                    db2.refresh(mm)
+                    out = {"type": "chat:message", "id": mm.id, "sender_id": user_id, "content": mm.content, "created_at": mm.created_at.isoformat()}
+                finally:
+                    db2.close()
+                await hub.publish(room_id, out)
 
-      if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-        dmSocket.send(JSON.stringify({ type: "call:answer", target_id: senderId, answer: answer }));
-      }
-    } catch (err) {
-      alert("Camera/Microphone access denied. Check browser permissions.");
-      endCall();
-    }
-  };
-}
+            elif mtype == "room:set_game":
+                slug = (msg.get("game_slug") or "").strip().lower()
+                if slug not in ALLOWED_GAMES:
+                    continue
+                db_g: Session = SessionLocal()
+                try:
+                    r = db_g.get(Room, room_id)
+                    if r and r.status == "waiting" and not r.tournament_match_id:
+                        r.game_slug = slug
+                        mm = db_g.query(Match).filter(Match.room_id == room_id, Match.status == "pending").first()
+                        if mm:
+                            mm.game_slug = slug
+                        db_g.commit()
+                finally:
+                    db_g.close()
+                await hub.publish(room_id, {"type": "room:game_update", "game_slug": slug, "set_by": user_id})
 
-// --- RINGTONE ---
-let ringtoneCtx = null;
-let ringtoneInterval = null;
+            elif mtype == "room:set_wager":
+                try:
+                    w = int(msg.get("wager", 0))
+                except (TypeError, ValueError):
+                    continue
+                if w < 0 or w > 10000:
+                    continue
+                db6: Session = SessionLocal()
+                payload_m = None
+                try:
+                    r = db6.get(Room, room_id)
+                    if r and r.tournament_match_id:
+                        continue
+                    mm = db6.query(Match).filter(Match.room_id == room_id, Match.status.in_(["pending", "playing"])).first()
+                    if r and mm:
+                        mm.wager = w
+                        r.wager = w
+                        db6.commit()
+                        payload_m = _match_payload(mm)
+                finally:
+                    db6.close()
+                if payload_m:
+                    await hub.publish(room_id, {"type": "room:wager_update", "match": payload_m})
 
-function playRingtone() {
-  try {
-    ringtoneCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const playBeep = () => {
-      const osc = ringtoneCtx.createOscillator();
-      const gain = ringtoneCtx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(440, ringtoneCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(880, ringtoneCtx.currentTime + 0.1);
-      gain.gain.setValueAtTime(0.5, ringtoneCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ringtoneCtx.currentTime + 0.5);
-      osc.connect(gain); gain.connect(ringtoneCtx.destination);
-      osc.start(); osc.stop(ringtoneCtx.currentTime + 0.5);
-    };
-    playBeep(); ringtoneInterval = setInterval(playBeep, 1500);
-  } catch (e) { console.log("Audio error", e); }
-}
+            elif mtype == "room:ready":
+                ready_val = bool(msg.get("ready", True))
+                both_ready = False
+                ready_payload: list[dict] = []
+                current_game = "dice"
+                member_count = 0
+                db3: Session = SessionLocal()
+                try:
+                    member = db3.query(RoomMember).filter(RoomMember.room_id == room_id, RoomMember.user_id == user_id).first()
+                    room_obj = db3.get(Room, room_id)
+                    if room_obj:
+                        current_game = room_obj.game_slug
+                    if member:
+                        member.ready = ready_val
+                        db3.commit()
+                        all_members = db3.query(RoomMember).filter(RoomMember.room_id == room_id).all()
+                        member_count = len(all_members)
+                        ready_payload = [{"user_id": x.user_id, "ready": x.ready} for x in all_members]
+                        if current_game in ("ludo", "whot"):
+                            both_ready = member_count >= 2 and all(x["ready"] for x in ready_payload)
+                        else:
+                            both_ready = member_count == 2 and all(x["ready"] for x in ready_payload)
+                finally:
+                    db3.close()
 
-function stopRingtone() {
-  if (ringtoneInterval) clearInterval(ringtoneInterval);
-  if (ringtoneCtx) ringtoneCtx.close();
-  ringtoneInterval = null; ringtoneCtx = null;
-}
+                await hub.publish(room_id, {"type": "room:ready_update", "members": ready_payload})
 
-function endCall() {
-  clearTimeout(callTimeout); callTimeout = null;
-  stopRingtone(); stopCallTimer();
-  if (incomingCallModal) { incomingCallModal.remove(); incomingCallModal = null; }
-  if (pc) { pc.close(); pc = null; }
-  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-  if (remoteStream) { remoteStream = null; }
-  if (currentCallTargetId && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-    try { dmSocket.send(JSON.stringify({ type: "call:end", target_id: currentCallTargetId })); } catch (e) {}
-  }
-  const overlay = $("videoCallOverlay");
-  if (overlay) overlay.remove();
-  currentCallTargetId = null;
-}
+                if both_ready:
+                    await hub.publish(room_id, {"type": "room:all_ready"})
+                    db4: Session = SessionLocal()
+                    try:
+                        for x in db4.query(RoomMember).filter(RoomMember.room_id == room_id).all():
+                            x.ready = False
+                        db4.commit()
+                    finally:
+                        db4.close()
 
-// ---------------------------------------------------------
-// 5. STATUS / STORIES
-// ---------------------------------------------------------
-let groupedStories = {};
+                    if current_game == "ludo":
+                        db5: Session = SessionLocal()
+                        try:
+                            r = db5.get(Room, room_id)
+                            m5 = _start_ludo_match(db5, r)
+                            if m5:
+                                await hub.publish(room_id, {"type": "ludo:start", "match_id": m5.id, "wager": m5.wager, "state": json.loads(m5.state_json)})
+                        finally:
+                            db5.close()
 
-async function renderStories() {
-  let bar = $("storyBar");
-  if (!bar) {
-    const listPanel = $("listPanel");
-    const searchDiv = listPanel.querySelector(".p-4.border-b");
-    if (searchDiv) {
-      bar = document.createElement("div");
-      bar.id = "storyBar";
-      bar.className = "flex gap-3 overflow-x-auto p-3 border-b border-slate-800 scrollbar-hide";
-      searchDiv.after(bar);
-    }
-  }
-  if (!bar) return;
+                    elif current_game == "chess":
+                        db5: Session = SessionLocal()
+                        try:
+                            r = db5.get(Room, room_id)
+                            m5 = _start_chess_match(db5, r)
+                            if m5:
+                                st = json.loads(m5.state_json)
+                                board = from_fen(st["fen"])
+                                w_user, b_user = db5.get(User, st["white_id"]), db5.get(User, st["black_id"])
+                                await hub.publish(room_id, {
+                                    "type": "chess:start", "match_id": m5.id, "wager": m5.wager,
+                                    "white_id": st["white_id"], "black_id": st["black_id"],
+                                    "white_tier": elo_tier(_elo_of(w_user)), "black_tier": elo_tier(_elo_of(b_user)),
+                                    "board": chess_state_to_dict(board),
+                                })
+                        finally:
+                            db5.close()
 
-  try { statuses = await api.request("/api/v1/friends/status/feed"); } catch (e) { statuses = []; }
+                    elif current_game == "whot":
+                        db5: Session = SessionLocal()
+                        try:
+                            r = db5.get(Room, room_id)
+                            m5 = _start_whot_match(db5, r)
+                            if m5:
+                                for member in db5.query(RoomMember).filter(RoomMember.room_id == room_id).all():
+                                    state_dict = whot_state_to_dict(_load_whot_state(m5), member.user_id)
+                                    await hub.send_to_user(room_id, member.user_id, {
+                                        "type": "whot:start", "match_id": m5.id, "wager": m5.wager, "state": state_dict
+                                    })
+                                spec_state = whot_state_to_dict(_load_whot_state(m5), "spectator")
+                                for spec_id in hub.spectators.get(room_id, set()):
+                                    await hub.send_to_user(room_id, spec_id, {
+                                        "type": "whot:start", "match_id": m5.id, "wager": m5.wager, "state": spec_state
+                                    })
+                        finally:
+                            db5.close()
 
-  groupedStories = {};
-  statuses.forEach(s => {
-    if (!groupedStories[s.user_id]) groupedStories[s.user_id] = { ...s, items: [] };
-    groupedStories[s.user_id].items.push(s);
-  });
+                    else:
+                        db5: Session = SessionLocal()
+                        try:
+                            r = db5.get(Room, room_id)
+                            m5 = _ensure_pending_match(db5, r)
+                            if m5:
+                                try:
+                                    result = play_match(db5, m5.id)
+                                    try:
+                                        result["xp"] = award_match_xp(db5, m5)
+                                    except Exception:
+                                        pass
+                                    await hub.publish(room_id, {"type": "match:result", "result": result})
+                                except DiceError as e:
+                                    await hub.publish(room_id, {"type": "match:error", "error": str(e)})
+                        finally:
+                            db5.close()
 
-  let html = `
-    <div class="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer" id="addStatusBtn">
-      <div class="w-14 h-14 rounded-full border-2 border-slate-700 bg-slate-800 flex items-center justify-center text-xl text-slate-400 hover:border-brand-500 transition">+</div>
-      <div class="text-[10px] text-slate-400 font-bold">Add</div>
-    </div>
-  `;
+            # --- LUDO ---
+            elif mtype == "ludo:roll":
+                db_l: Session = SessionLocal()
+                try:
+                    m = db_l.query(Match).filter(Match.room_id == room_id, Match.game_slug == "ludo", Match.status == "playing").first()
+                    if not m or not m.state_json:
+                        await hub.send_local(room_id, user_id, {"type": "ludo:error", "error": "No active ludo game"})
+                        continue
+                    state = _load_ludo_state(m)
+                    if state.winner_user_id:
+                        await hub.send_local(room_id, user_id, {"type": "ludo:error", "error": "Game finished"})
+                        continue
+                    if state.current().user_id != user_id:
+                        await hub.send_local(room_id, user_id, {"type": "ludo:error", "error": "Not your turn"})
+                        continue
+                    if state.dice_rolled:
+                        await hub.send_local(room_id, user_id, {"type": "ludo:error", "error": "Already rolled"})
+                        continue
+                    roll = begin_roll(state)
+                    moves = ludo_legal_moves(state, roll)
+                    _save_ludo_state(db_l, m, state)
+                    await hub.publish(room_id, {"type": "ludo:rolled", "user_id": user_id, "roll": roll, "legal_moves": moves, "state": ludo_state_to_dict(state)})
+                finally:
+                    db_l.close()
 
-  Object.entries(groupedStories).forEach(([uid, group]) => {
-    const isSelf = group.relation === "self";
-    const ringClass = isSelf ? "border-slate-500" : "border-brand-500";
-    html += `
-      <div class="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer view-status-btn" data-uid="${escapeHTML(uid)}">
-        <div class="w-14 h-14 rounded-full border-2 ${ringClass} p-0.5">${avatarHTML(group.avatar_id, "md")}</div>
-        <div class="text-[10px] text-slate-300 font-bold truncate w-14 text-center">${isSelf ? "You" : escapeHTML(group.username)}</div>
-      </div>
-    `;
-  });
+            elif mtype == "ludo:move":
+                try:
+                    token_index = int(msg.get("token_index"))
+                except (TypeError, ValueError):
+                    continue
+                db_l2: Session = SessionLocal()
+                try:
+                    m = db_l2.query(Match).filter(Match.room_id == room_id, Match.game_slug == "ludo", Match.status == "playing").first()
+                    if not m or not m.state_json:
+                        continue
+                    state = _load_ludo_state(m)
+                    if state.current().user_id != user_id or not state.awaiting_token_choice:
+                        await hub.send_local(room_id, user_id, {"type": "ludo:error", "error": "Not your move"})
+                        continue
+                    roll = state.last_roll
+                    if roll is None:
+                        continue
+                    result = apply_move(state, token_index, roll)
+                    if not result.ok:
+                        await hub.send_local(room_id, user_id, {"type": "ludo:error", "error": result.error or "Illegal move"})
+                        continue
+                    _save_ludo_state(db_l2, m, state)
+                    await hub.publish(room_id, {
+                        "type": "ludo:moved", "user_id": user_id, "token_index": token_index, "roll": roll,
+                        "captured": result.captured, "entered_home": result.entered_home, "extra_turn": result.extra_turn,
+                        "next_turn_user_id": result.next_turn_user_id, "winner_user_id": result.winner_user_id, "state": ludo_state_to_dict(state),
+                    })
+                    if result.winner_user_id:
+                        xp_rewards = _settle_match(db_l2, m, result.winner_user_id)
+                        try:
+                            _room = db_l2.get(Room, room_id)
+                            if _room and _room.tournament_match_id:
+                                advance_winner(db_l2, _room.tournament_match_id, result.winner_user_id)
+                        except Exception as _e:
+                            print(f"[tournament advance error] {_e}")
+                        await hub.publish(room_id, {"type": "ludo:end", "winner_user_id": result.winner_user_id, "wager": m.wager, "pot": m.wager * 2, "xp": xp_rewards})
+                finally:
+                    db_l2.close()
 
-  bar.innerHTML = html;
+            # --- CHESS ---
+            elif mtype == "chess:move":
+                uci = (msg.get("uci") or "").strip().lower()
+                if not uci:
+                    continue
+                db_c: Session = SessionLocal()
+                try:
+                    m = db_c.query(Match).filter(Match.room_id == room_id, Match.game_slug == "chess", Match.status == "playing").first()
+                    if not m or not m.state_json:
+                        await hub.send_local(room_id, user_id, {"type": "chess:error", "error": "No active chess game"})
+                        continue
+                    st = _load_chess_state(m)
+                    board = from_fen(st["fen"])
+                    my_color = "w" if st["white_id"] == user_id else ("b" if st["black_id"] == user_id else None)
+                    if not my_color:
+                        await hub.send_local(room_id, user_id, {"type": "chess:error", "error": "You are not in this match"})
+                        continue
+                    if board.turn != my_color:
+                        await hub.send_local(room_id, user_id, {"type": "chess:error", "error": "Not your turn"})
+                        continue
+                    mv = _find_legal_move_by_uci(board, uci)
+                    if not mv:
+                        await hub.send_local(room_id, user_id, {"type": "chess:error", "error": "Illegal move"})
+                        continue
+                    san = mv.to_san(board)
+                    new_board = make_move(board, mv)
+                    st["fen"] = to_fen(new_board)
+                    st["moves"].append(uci)
+                    st["sans"].append(san)
+                    st["draw_offered_by"] = None
+                    outcome = chess_result(new_board)
+                    winner_id = st["white_id"] if outcome == "w" else (st["black_id"] if outcome == "b" else None)
+                    _save_chess_state(db_c, m, st)
+                    await hub.publish(room_id, {"type": "chess:moved", "user_id": user_id, "uci": uci, "san": san, "board": chess_state_to_dict(new_board)})
+                    if outcome is not None:
+                        xp_rewards = _settle_match(db_c, m, winner_id)
+                        elo_result = _update_chess_elo(db_c, st, outcome)
+                        await hub.publish(room_id, {"type": "chess:end", "result": outcome, "winner_id": winner_id, "wager": m.wager, "pot": m.wager * 2, "xp": xp_rewards, "elo": elo_result})
+                finally:
+                    db_c.close()
 
-  bar.querySelectorAll(".view-status-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const group = groupedStories[btn.dataset.uid];
-      if (group) showStatusSlideshow(group.items);
-    });
-  });
+            elif mtype == "chess:offer_draw":
+                db_cd: Session = SessionLocal()
+                try:
+                    m = db_cd.query(Match).filter(Match.room_id == room_id, Match.game_slug == "chess", Match.status == "playing").first()
+                    if not m or not m.state_json:
+                        continue
+                    st = _load_chess_state(m)
+                    if user_id not in (st["white_id"], st["black_id"]):
+                        continue
+                    if st.get("draw_offered_by"):
+                        await hub.send_local(room_id, user_id, {"type": "chess:error", "error": "Draw already offered"})
+                        continue
+                    st["draw_offered_by"] = user_id
+                    _save_chess_state(db_cd, m, st)
+                    opponent_id = st["black_id"] if user_id == st["white_id"] else st["white_id"]
+                    await hub.send_to_user(room_id, opponent_id, {"type": "chess:draw_offered", "from_user_id": user_id})
+                    await hub.send_local(room_id, user_id, {"type": "chess:draw_offered_sent"})
+                finally:
+                    db_cd.close()
 
-  $("addStatusBtn").addEventListener("click", showCreateStatusModal);
-}
+            elif mtype == "chess:respond_draw":
+                accept = bool(msg.get("accept", False))
+                db_cd2: Session = SessionLocal()
+                try:
+                    m = db_cd2.query(Match).filter(Match.room_id == room_id, Match.game_slug == "chess", Match.status == "playing").first()
+                    if not m or not m.state_json:
+                        continue
+                    st = _load_chess_state(m)
+                    offerer = st.get("draw_offered_by")
+                    if not offerer or offerer == user_id:
+                        await hub.send_local(room_id, user_id, {"type": "chess:error", "error": "No pending draw offer"})
+                        continue
+                    if accept:
+                        st["draw_offered_by"] = None
+                        _save_chess_state(db_cd2, m, st)
+                        xp_rewards = _settle_match(db_cd2, m, None)
+                        elo_result = _update_chess_elo(db_cd2, st, "draw")
+                        await hub.publish(room_id, {"type": "chess:end", "result": "draw", "winner_id": None, "wager": m.wager, "pot": 0, "xp": xp_rewards, "elo": elo_result})
+                    else:
+                        st["draw_offered_by"] = None
+                        _save_chess_state(db_cd2, m, st)
+                        await hub.publish(room_id, {"type": "chess:draw_declined"})
+                finally:
+                    db_cd2.close()
 
-function showStatusSlideshow(items) {
-  let currentIndex = 0;
-  const overlay = document.createElement("div");
-  overlay.className = "fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center";
+            elif mtype == "chess:resign":
+                db_cr: Session = SessionLocal()
+                try:
+                    m = db_cr.query(Match).filter(Match.room_id == room_id, Match.game_slug == "chess", Match.status == "playing").first()
+                    if not m or not m.state_json:
+                        continue
+                    st = _load_chess_state(m)
+                    if user_id not in (st["white_id"], st["black_id"]):
+                        continue
+                    if st.get("resigned_by"):
+                        continue
+                    st["resigned_by"] = user_id
+                    _save_chess_state(db_cr, m, st)
+                    winner_id = st["black_id"] if user_id == st["white_id"] else st["white_id"]
+                    outcome = "b" if winner_id == st["black_id"] else "w"
+                    xp_rewards = _settle_match(db_cr, m, winner_id)
+                    elo_result = _update_chess_elo(db_cr, st, outcome)
+                    await hub.publish(room_id, {"type": "chess:end", "result": outcome, "winner_id": winner_id, "wager": m.wager, "pot": m.wager * 2, "resigned": True, "xp": xp_rewards, "elo": elo_result})
+                finally:
+                    db_cr.close()
 
-  function renderSlide() {
-    const status = items[currentIndex];
-    api.request(`/api/v1/friends/status/${status.id}/view`, { method: "POST" }).catch(() => {});
+            # --- WHOT ---
+            elif mtype == "whot:play":
+                try:
+                    card_index = int(msg.get("card_index"))
+                except (TypeError, ValueError):
+                    continue
+                chosen_shape = msg.get("chosen_shape")
+                db_w: Session = SessionLocal()
+                try:
+                    m = db_w.query(Match).filter(Match.room_id == room_id, Match.game_slug == "whot", Match.status == "playing").first()
+                    if not m or not m.state_json:
+                        continue
+                    state = _load_whot_state(m)
+                    if state.winner_user_id:
+                        continue
+                    result = whot_play_card(state, user_id, card_index, chosen_shape)
+                    if not result.get("ok"):
+                        await hub.send_local(room_id, user_id, {"type": "whot:error", "error": result.get("error")})
+                        continue
+                    
+                    _save_whot_state(db_w, m, state)
+                    
+                    for member in db_w.query(RoomMember).filter(RoomMember.room_id == room_id).all():
+                        state_dict = whot_state_to_dict(state, member.user_id)
+                        await hub.send_to_user(room_id, member.user_id, {
+                            "type": "whot:played", "user_id": user_id, "state": state_dict
+                        })
+                    
+                    spec_state = whot_state_to_dict(state, "spectator")
+                    for spec_id in hub.spectators.get(room_id, set()):
+                        await hub.send_to_user(room_id, spec_id, {
+                            "type": "whot:played", "user_id": user_id, "state": spec_state
+                        })
 
-    let mediaHTML = "";
-    if (status.media_url) {
-      const safeUrl = escapeHTML(status.media_url);
-      if (status.media_url.match(/\.(mp4|webm|ogg|mov)$/i)) mediaHTML = `<video src="${safeUrl}" controls autoplay class="w-full h-full object-contain"></video>`;
-      else mediaHTML = `<img src="${safeUrl}" class="w-full h-full object-contain" />`;
-    }
+                    if result.get("winner"):
+                        xp_rewards = _settle_match(db_w, m, user_id)
+                        await hub.publish(room_id, {"type": "whot:end", "winner_user_id": user_id, "wager": m.wager, "pot": m.wager * 2, "xp": xp_rewards})
+                finally:
+                    db_w.close()
 
-    let viewCountHtml = status.relation === "self" && status.viewers ? `<div class="text-xs text-slate-300 mt-1">👁️ ${status.viewers.length} views</div>` : "";
+            elif mtype == "whot:draw":
+                db_wd: Session = SessionLocal()
+                try:
+                    m = db_wd.query(Match).filter(Match.room_id == room_id, Match.game_slug == "whot", Match.status == "playing").first()
+                    if not m or not m.state_json:
+                        continue
+                    state = _load_whot_state(m)
+                    if state.winner_user_id:
+                        continue
+                    result = whot_draw_card(state, user_id)
+                    if not result.get("ok"):
+                        await hub.send_local(room_id, user_id, {"type": "whot:error", "error": result.get("error")})
+                        continue
+                    
+                    _save_whot_state(db_wd, m, state)
+                    
+                    for member in db_wd.query(RoomMember).filter(RoomMember.room_id == room_id).all():
+                        state_dict = whot_state_to_dict(state, member.user_id)
+                        await hub.send_to_user(room_id, member.user_id, {
+                            "type": "whot:played", "user_id": user_id, "state": state_dict
+                        })
 
-    overlay.innerHTML = `
-      <div class="w-full max-w-sm h-full sm:h-[80vh] sm:rounded-2xl bg-slate-900 relative overflow-hidden flex flex-col">
-        <div class="absolute top-4 left-4 right-4 flex gap-1 z-20">
-          ${items.map((_, i) => `<div class="h-1 flex-1 bg-white/30 rounded-full overflow-hidden"><div class="h-full bg-white transition-all duration-3000 ${i <= currentIndex ? 'w-full' : 'w-0'}"></div></div>`).join("")}
-        </div>
-        <div class="p-4 pt-10 flex items-center gap-2 z-20 bg-gradient-to-b from-black/80 to-transparent absolute top-0 left-0 right-0">
-          ${avatarHTML(status.avatar_id, "sm")}
-          <div class="text-sm font-bold text-white">${status.relation === "self" ? "Your Story" : escapeHTML(status.username)}</div>
-          <div class="ml-auto text-xs text-slate-300">${timeAgo(status.created_at)}</div>
-          <button id="closeStoryBtn" class="ml-2 text-white text-xl">✕</button>
-        </div>
-        <div class="flex-1 relative flex items-center justify-center bg-black">
-          ${mediaHTML}
-          ${status.content ? `<div class="absolute bottom-10 left-4 right-4 text-center text-white text-lg font-bold p-4 bg-black/50 rounded-xl backdrop-blur">${escapeHTML(status.content)}</div>` : ""}
-          ${viewCountHtml}
-        </div>
-        <div id="tapLeft" class="absolute top-0 bottom-0 left-0 w-1/3 z-10 cursor-pointer"></div>
-        <div id="tapRight" class="absolute top-0 bottom-0 right-0 w-2/3 z-10 cursor-pointer"></div>
+                    spec_state = whot_state_to_dict(state, "spectator")
+                    for spec_id in hub.spectators.get(room_id, set()):
+                        await hub.send_to_user(room_id, spec_id, {
+                            "type": "whot:played", "user_id": user_id, "state": spec_state
+                        })
+                finally:
+                    db_wd.close()
 
-        ${status.relation === "self" ? "" : `
-        <div class="absolute bottom-4 left-4 right-4 z-20">
-          <input type="text" id="statusReplyInput" placeholder="Reply to story..." class="w-full bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-full px-4 py-2 text-sm focus:outline-none" />
-        </div>
-        `}
-      </div>
-    `;
-
-    overlay.querySelector("#closeStoryBtn").addEventListener("click", () => { clearTimeout(overlay._timeout); overlay.remove(); });
-    overlay.querySelector("#tapLeft").addEventListener("click", () => { if (currentIndex > 0) { currentIndex--; renderSlide(); } });
-    overlay.querySelector("#tapRight").addEventListener("click", () => {
-      if (currentIndex < items.length - 1) { currentIndex++; renderSlide(); }
-      else { clearTimeout(overlay._timeout); overlay.remove(); }
-    });
-
-    const replyInput = overlay.querySelector("#statusReplyInput");
-    if (replyInput) {
-      replyInput.addEventListener("focus", () => clearTimeout(overlay._timeout));
-      replyInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const val = replyInput.value.trim();
-          if (!val) return;
-          if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-            dmSocket.send(JSON.stringify({ type: "dm:send", target_id: status.user_id, content: val, reply_to_status_id: status.id }));
-            alert("Reply sent!");
-            replyInput.value = ""; clearTimeout(overlay._timeout); overlay.remove();
-          }
-        }
-      });
-    }
-
-    if (overlay._timeout) clearTimeout(overlay._timeout);
-    overlay._timeout = setTimeout(() => {
-      if (currentIndex < items.length - 1) { currentIndex++; renderSlide(); }
-      else { overlay.remove(); }
-    }, 5000);
-  }
-
-  renderSlide();
-  document.body.appendChild(overlay);
-}
-
-function showCreateStatusModal() {
-  const overlay = document.createElement("div");
-  overlay.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
-  overlay.innerHTML = `
-    <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl">
-      <h3 class="text-white font-bold text-lg mb-4">Create Status</h3>
-      <textarea id="statusText" rows="3" placeholder="What's on your mind?" class="w-full bg-slate-800 text-white rounded-lg p-3 text-sm focus:outline-none border border-slate-700 mb-3"></textarea>
-      <label class="flex items-center gap-2 bg-slate-800 text-slate-300 border border-slate-700 rounded-lg p-3 cursor-pointer hover:bg-slate-700 mb-4">
-        <span class="text-xl">📸</span><span class="text-sm font-bold" id="fileLabel">Add Image/Video</span>
-        <input type="file" id="statusMedia" accept="image/*,video/*" class="hidden" />
-      </label>
-      <div class="flex gap-2">
-        <button id="cancelStatusBtn" class="flex-1 py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
-        <button id="postStatusBtn" class="flex-1 py-2.5 rounded-lg bg-brand-600 text-white font-bold text-sm">Post</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  const fileInput = overlay.querySelector("#statusMedia");
-  fileInput.addEventListener("change", () => {
-    if (fileInput.files.length > 0) {
-      overlay.querySelector("#fileLabel").textContent = fileInput.files[0].name;
-      overlay.querySelector("#fileLabel").classList.add("text-brand-400");
-    }
-  });
-
-  overlay.querySelector("#cancelStatusBtn").addEventListener("click", () => overlay.remove());
-  overlay.querySelector("#postStatusBtn").addEventListener("click", async () => {
-    const text = overlay.querySelector("#statusText").value.trim();
-    const file = fileInput.files[0];
-    if (!text && !file) return alert("Add text or media");
-    const formData = new FormData();
-    if (text) formData.append("content", text);
-    if (file) formData.append("media", file);
-    try {
-      const res = await fetch("/api/v1/friends/status", { method: "POST", headers: { "Authorization": "Bearer " + api.getToken() }, body: formData });
-      if (!res.ok) throw new Error("Failed to post");
-      overlay.remove();
-      await renderStories();
-    } catch (e) { alert("Error posting status"); }
-  });
-}
-
-// ---------------------------------------------------------
-// 6. BOOT
-// ---------------------------------------------------------
-async function refreshAll() {
-  const [f, r, c, g] = await Promise.allSettled([
-    api.listFriends(),
-    api.listFriendRequests(),
-    api.listConversations(),
-    api.request("/api/v1/groups")
-  ]);
-  if (f.status === "fulfilled") friends = f.value; else console.error("friends:", f.reason);
-  if (r.status === "fulfilled") requests = r.value; else console.error("requests:", r.reason);
-  if (c.status === "fulfilled") conversations = c.value; else console.error("conversations:", c.reason);
-  if (g.status === "fulfilled") groups = g.value; else { groups = []; console.warn("groups:", g.reason); }
-
-  const badge = $("reqBadge");
-  if (badge) {
-    if (requests.length > 0) { badge.textContent = String(requests.length); badge.classList.remove("hidden"); }
-    else { badge.classList.add("hidden"); }
-  }
-}
-
-async function boot() {
-  if (!api.getToken()) { window.location.href = "/"; return; }
-  try { me = await api.me(); myId = me.id; } catch { api.clearToken(); window.location.href = "/"; return; }
-
-  connectDMSocket();
-
-  await refreshAll();
-  renderList();
-  await renderStories();
-
-  pollTimer = setInterval(async () => {
-    await refreshAll();
-    await renderStories();
-    if (!$("searchInput").value.trim()) renderList();
-  }, 10000);
-}
-
-boot();
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await hub.leave(room_id, user_id)
+        if not spectator:
+            db_off: Session = SessionLocal()
+            try:
+                await presence_svc.mark_offline(db_off, room_id, user_id)
+            finally:
+                db_off.close()
+            await hub.publish(room_id, {"type": "room:player_disconnected", "user_id": user_id})
