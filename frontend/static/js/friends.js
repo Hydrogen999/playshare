@@ -388,7 +388,7 @@ function addMessageToUI(m) {
   const mine = m.sender_id === myId;
 
   const wrap = document.createElement("div");
-  wrap.className = `relative flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble select-none`;
+  wrap.className = `relative flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble`;
   wrap.dataset.msgId = m.id;
 
   let senderHtml = "";
@@ -450,49 +450,18 @@ function addMessageToUI(m) {
 
   wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}`;
   
-  // ==========================================
-  // 🟢 FIXED UNIVERSAL TAP/CLICK GESTURES 🟢
-  // ==========================================
-  let lastTap = 0;
-  let pressTimer = null;
-
-  // Handles Double-Click (Desktop) and Double-Tap (Mobile) perfectly
-  wrap.addEventListener("pointerdown", (e) => {
-      if (e.button === 2) return; // Ignore right-clicks here
-
-      const now = Date.now();
-      const delay = now - lastTap;
-      
-      if (delay < 300 && delay > 0) {
-          // DOUBLE TAP/CLICK!
-          e.preventDefault();
-          e.stopPropagation();
-          console.log("DEBUG: Double-tap/click fired!"); // Check your console for this
-          showEmojiPicker(e, m.id);
-          lastTap = 0; 
-          clearTimeout(pressTimer);
-          return;
-      }
-      
-      lastTap = now;
-
-      // Long press for mobile
-      pressTimer = setTimeout(() => {
-          console.log("DEBUG: Long-press fired!");
-          showEmojiPicker(e, m.id);
-      }, 500);
-  });
-
-  wrap.addEventListener("pointerup", () => clearTimeout(pressTimer));
-  wrap.addEventListener("pointermove", () => clearTimeout(pressTimer));
-  wrap.addEventListener("pointercancel", () => clearTimeout(pressTimer));
-
-  // Right-click (Desktop)
+  // --- Reaction Gestures ---
   wrap.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      console.log("DEBUG: Right-click fired!");
       showEmojiPicker(e, m.id);
   });
+  
+  let pressTimer;
+  wrap.addEventListener("touchstart", (e) => {
+      pressTimer = setTimeout(() => showEmojiPicker(e, m.id), 500);
+  }, { passive: true });
+  wrap.addEventListener("touchend", () => clearTimeout(pressTimer));
+  wrap.addEventListener("touchmove", () => clearTimeout(pressTimer));
 
   el.appendChild(wrap);
   el.scrollTop = el.scrollHeight;
@@ -500,8 +469,8 @@ function addMessageToUI(m) {
 
 // --- EMOJI PICKER LOGIC ---
 function showEmojiPicker(e, messageId) {
-    if (e && e.preventDefault) e.preventDefault();
-    if (e && e.stopPropagation) e.stopPropagation();
+    e.preventDefault();
+    e.stopPropagation();
     
     document.querySelectorAll(".emoji-picker").forEach(el => el.remove());
     document.querySelectorAll(".emoji-backdrop").forEach(el => el.remove());
@@ -513,10 +482,8 @@ function showEmojiPicker(e, messageId) {
     const picker = document.createElement("div");
     picker.className = "emoji-picker fixed z-[999] bg-slate-800 border border-slate-700 rounded-full shadow-2xl flex gap-1 p-1 animate-[pop_0.2s_ease-out]";
     
-    // Safely get X and Y (handles mouse, touch, and pointer events)
-    let x = e.clientX || e.pageX || 0;
-    let y = e.clientY || e.pageY || 0;
-
+    const x = e.clientX || (e.touches && e.touches[0].clientX) || e.pageX;
+    const y = e.clientY || (e.touches && e.touches[0].clientY) || e.pageY;
     picker.style.left = `${x - 100}px`;
     picker.style.top = `${y - 50}px`;
 
@@ -525,6 +492,7 @@ function showEmojiPicker(e, messageId) {
         btn.className = "text-2xl hover:scale-125 transition p-1 select-none";
         btn.textContent = emoji;
         
+        // Use pointerdown so it fires instantly and doesn't get canceled
         btn.addEventListener("pointerdown", (ev) => {
             ev.preventDefault();
             ev.stopPropagation();
