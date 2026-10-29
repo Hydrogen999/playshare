@@ -203,7 +203,16 @@ function timeAgo(iso) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 function escapeHTML(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
-function crownMark(isPremium) { return isPremium ? ' <span class="text-amber-400 text-xs">👑</span>' : ""; }
+
+// 🟢 NEW: Premium Badge & Glow Function
+function premiumMark(isPremium, frameColor) {
+    if (!isPremium) return "";
+    
+    // Create a glowing PRO badge
+    let badge = `<span class="bg-gradient-to-r from-amber-300 to-amber-500 text-slate-900 text-[8px] font-black px-1.5 py-0.5 rounded-sm uppercase tracking-wider ml-1 shadow-[0_0_8px_rgba(245,158,11,0.8)]">PRO</span>`;
+    
+    return badge;
+}
 
 function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSeen) {
     let statusHtml = "";
@@ -213,12 +222,15 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
         statusHtml = `<span class="text-slate-500 text-[10px]">Last seen ${timeAgo(lastSeen)}</span>`;
     }
     
+    // 🟢 Add Glow to the avatar if premium
+    const glowClass = isPremium ? "shadow-[0_0_15px_rgba(245,158,11,0.6)] rounded-full" : "";
+
     $("chatHeaderContent").innerHTML = `
       <div class="flex items-center justify-between w-full">
         <div class="flex items-center gap-3">
-          ${avatarHTML(avatarId, "sm", null, isPremium)}
+          <div class="${glowClass}">${avatarHTML(avatarId, "sm", null, isPremium)}</div>
           <div>
-            <div class="text-sm font-bold text-slate-100 flex items-center gap-1">${escapeHTML(username)}${crownMark(isPremium)}</div>
+            <div class="text-sm font-bold text-slate-100 flex items-center">${escapeHTML(username)}${premiumMark(isPremium)}</div>
             <div id="typingIndicator" class="hidden"></div>
             ${statusHtml}
           </div>
@@ -321,10 +333,13 @@ function renderList() {
       else if (rel === "pending_out") action = `<span class="text-xs text-amber-400">Sent</span>`;
       else if (rel === "pending_in") action = `<button data-act="accept" data-id="${u.id}" class="text-xs px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700">Accept</button>`;
       else action = `<button data-act="add" data-id="${u.id}" class="text-xs px-2.5 py-1.5 rounded bg-brand-600 hover:bg-brand-700">+ Add</button>`;
+      
+      const glowClass = u.is_premium ? "shadow-[0_0_10px_rgba(245,158,11,0.5)] rounded-full" : "";
+
       return `
-        <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50">
-          <div class="flex-shrink-0">${avatarHTML(u.avatar_id, "sm", u.frame_color, u.is_premium)}</div>
-          <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate">${escapeHTML(u.username)}${crownMark(u.is_premium)}</div><div class="text-xs text-slate-500">Level ${u.level}</div></div>
+        <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 transition-all hover:pl-5">
+          <div class="flex-shrink-0 ${glowClass}">${avatarHTML(u.avatar_id, "sm", u.frame_color, u.is_premium)}</div>
+          <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate flex items-center">${escapeHTML(u.username)}${premiumMark(u.is_premium)}</div><div class="text-xs text-slate-500">Level ${u.level}</div></div>
           ${action}
         </div>`;
     }).join("");
@@ -334,18 +349,20 @@ function renderList() {
   if (activeTab === "friends") {
     if (friends.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No friends yet.</div>`; return; }
     list.innerHTML = friends.map((f) => {
-      const onlineDot = f.is_online ? `<span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 border-2 border-slate-900"></span>` : "";
+      const onlineDot = f.is_online ? `<span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 border-2 border-slate-900 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>` : "";
+      const glowClass = f.is_premium ? "shadow-[0_0_10px_rgba(245,158,11,0.5)] rounded-full" : "";
+      
       return `
-      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50">
-        <div class="relative flex-shrink-0 cursor-pointer" data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}">
+      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 transition-all hover:pl-5 group">
+        <div class="relative flex-shrink-0 cursor-pointer ${glowClass}" data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}">
             ${avatarHTML(f.avatar_id, "sm", f.frame_color, f.is_premium)}
             ${onlineDot}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-semibold truncate flex items-center gap-1">${escapeHTML(f.username)}${crownMark(f.is_premium)} ${f.streak_count > 0 ? `<span class="text-orange-500 font-bold text-[10px]">🔥 ${f.streak_count}</span>` : ""}</div>
+          <div class="text-sm font-semibold truncate flex items-center">${escapeHTML(f.username)}${premiumMark(f.is_premium)} ${f.streak_count > 0 ? `<span class="text-orange-500 font-bold text-[10px] ml-1">🔥 ${f.streak_count}</span>` : ""}</div>
           <div class="text-xs text-slate-500">Level ${f.level}</div>
         </div>
-        <button data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}" class="text-xs px-2 py-1.5 rounded bg-brand-600 hover:bg-brand-700 text-white font-bold transition">Chat</button>
+        <button data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 group-hover:bg-brand-600 group-hover:border-brand-500 group-hover:shadow-[0_0_10px_rgba(109,40,217,0.5)] text-white font-bold transition">Chat</button>
       </div>`}).join("");
     wireFriendRows(); return;
   }
@@ -353,7 +370,7 @@ function renderList() {
   if (activeTab === "groups") {
     if (groups.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No groups yet. Click + to create one.</div>`; return; }
     list.innerHTML = groups.map((g) => `
-      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 cursor-pointer" data-group-chat="${g.id}" data-group-name="${escapeHTML(g.name)}">
+      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 cursor-pointer transition-all hover:pl-5" data-group-chat="${g.id}" data-group-name="${escapeHTML(g.name)}">
         <div class="h-10 w-10 rounded-full bg-slate-700 flex items-center justify-center text-lg">👥</div>
         <div class="flex-1 min-w-0">
           <div class="text-sm font-semibold text-slate-200 truncate">${escapeHTML(g.name)}</div>
@@ -366,26 +383,30 @@ function renderList() {
 
   if (activeTab === "requests") {
     if (requests.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No pending requests.</div>`; return; }
-    list.innerHTML = requests.map((r) => `
+    list.innerHTML = requests.map((r) => {
+      const glowClass = r.is_premium ? "shadow-[0_0_10px_rgba(245,158,11,0.5)] rounded-full" : "";
+      return `
       <div class="flex items-center gap-3 px-4 py-3 border-b border-slate-800/50">
-        <div class="flex-shrink-0">${avatarHTML(r.avatar_id, "sm", r.frame_color, r.is_premium)}</div>
-        <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate">${escapeHTML(r.username)}${crownMark(r.is_premium)}</div><div class="text-xs text-slate-500">Level ${r.level}</div></div>
+        <div class="flex-shrink-0 ${glowClass}">${avatarHTML(r.avatar_id, "sm", r.frame_color, r.is_premium)}</div>
+        <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate flex items-center">${escapeHTML(r.username)}${premiumMark(r.is_premium)}</div><div class="text-xs text-slate-500">Level ${r.level}</div></div>
         <div class="flex gap-1">
           <button data-act="accept" data-id="${r.user_id}" class="text-xs px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700">✓</button>
           <button data-act="decline" data-id="${r.user_id}" class="text-xs px-2.5 py-1.5 rounded bg-slate-700 hover:bg-slate-600">✕</button>
         </div>
-      </div>`).join("");
+      </div>`}).join("");
     wireRowButtons(); return;
   }
 
   if (activeTab === "chats") {
     if (conversations.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No conversations yet.</div>`; return; }
-    list.innerHTML = conversations.map((c) => `
-      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 cursor-pointer" data-chat="${c.user_id}" data-username="${escapeHTML(c.username)}" data-avatar="${c.avatar_id}" data-premium="${c.is_premium ? '1' : '0'}">
-        <div class="flex-shrink-0">${avatarHTML(c.avatar_id, "sm", c.frame_color, c.is_premium)}</div>
+    list.innerHTML = conversations.map((c) => {
+      const glowClass = c.is_premium ? "shadow-[0_0_10px_rgba(245,158,11,0.5)] rounded-full" : "";
+      return `
+      <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 cursor-pointer transition-all hover:pl-5" data-chat="${c.user_id}" data-username="${escapeHTML(c.username)}" data-avatar="${c.avatar_id}" data-premium="${c.is_premium ? '1' : '0'}">
+        <div class="flex-shrink-0 ${glowClass}">${avatarHTML(c.avatar_id, "sm", c.frame_color, c.is_premium)}</div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between">
-            <div class="text-sm font-semibold truncate flex items-center gap-1">${escapeHTML(c.username)}${crownMark(c.is_premium)} ${c.streak > 0 ? `<span class="text-orange-500 font-bold text-[10px]">🔥 ${c.streak}</span>` : ""}</div>
+            <div class="text-sm font-semibold truncate flex items-center">${escapeHTML(c.username)}${premiumMark(c.is_premium)} ${c.streak > 0 ? `<span class="text-orange-500 font-bold text-[10px] ml-1">🔥 ${c.streak}</span>` : ""}</div>
             <div class="text-[10px] text-slate-500">${timeAgo(c.last_at)}</div>
           </div>
           <div class="flex items-center justify-between mt-0.5">
@@ -393,7 +414,7 @@ function renderList() {
             ${c.unread_count > 0 ? `<span class="ml-2 px-1.5 py-0.5 rounded bg-red-500 text-white text-[10px] font-bold">${c.unread_count}</span>` : ""}
           </div>
         </div>
-      </div>`).join("");
+      </div>`}).join("");
     wireFriendRows(); return;
   }
 }
@@ -494,9 +515,14 @@ function addMessageToUI(m, highlightQuery = null) {
   if (!el) return;
   
   const mine = m.sender_id === myId;
+  
+  // 🟢 Premium Message Glow
+  const senderFriend = friends.find(f => String(f.id) === String(m.sender_id));
+  const isPremiumSender = senderFriend ? senderFriend.is_premium : false;
+  const premiumBubbleClass = (isPremiumSender && !mine) ? "shadow-[0_0_15px_rgba(245,158,11,0.2)] border border-amber-500/30" : "";
 
   const wrap = document.createElement("div");
-  wrap.className = `relative group flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble`;
+  wrap.className = `relative group flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble animate-[slideUp_0.2s_ease-out]`;
   wrap.dataset.msgId = m.id;
 
   let senderHtml = "";
@@ -547,7 +573,7 @@ function addMessageToUI(m, highlightQuery = null) {
         renderedContent = renderedContent.replace(regex, `<mark class="bg-amber-400 text-black rounded px-0.5">$1</mark>`);
     }
 
-    contentHtml = `<div class="message-content max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${renderedContent}</div>`;
+    contentHtml = `<div class="message-content max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : `bg-slate-800 text-slate-100 ${premiumBubbleClass}`}">${renderedContent}</div>`;
   }
 
   let mediaHtml = "";
@@ -702,7 +728,7 @@ $("chatForm")?.addEventListener("submit", async (e) => {
   }
 });
 
-// 🟢 NEW: ATTACHMENT MENU LOGIC
+// 🟢 ATTACHMENT MENU LOGIC
 $("attachmentBtn")?.addEventListener("click", (e) => {
     e.stopPropagation();
     document.querySelectorAll(".attachment-menu").forEach(el => el.remove());
@@ -722,18 +748,15 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
         </button>
     `;
     
-    // Find the form container and append the menu relative to the button
     const form = $("chatForm");
     form.style.position = "relative";
     form.appendChild(menu);
 
-    // Close menu when clicking outside
     setTimeout(() => {
         const closeMenu = () => { menu.remove(); document.removeEventListener("click", closeMenu); };
         document.addEventListener("click", closeMenu);
     }, 10);
 
-    // Handle Image Upload
     menu.querySelector("#menuImage").onclick = () => {
         const input = document.createElement("input");
         input.type = "file";
@@ -749,7 +772,6 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
         input.click();
     };
 
-    // Handle Gift Modal
     menu.querySelector("#menuGift").onclick = () => {
         if (!activeChatUserId) return alert("Can only send coins in private chats.");
         const modal = document.createElement("div");
@@ -777,7 +799,6 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
         };
     };
 
-    // Handle Voice Note
     menu.querySelector("#menuVoice").onclick = async () => {
         if (isRecording) return;
         try {
@@ -802,7 +823,6 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
             mediaRecorder.start();
             isRecording = true;
             
-            // Show a temporary recording toast
             const toast = document.createElement("div");
             toast.id = "recordingToast";
             toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-red-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold flex items-center gap-2 cursor-pointer animate-pulse";
