@@ -38,15 +38,17 @@ class DirectMessage(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     sender_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
-    recipient_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True) # Nullable for group messages
+    recipient_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True) 
     group_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     
-    # These belong to DirectMessage
     media_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reply_to_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     reply_to_status_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    # 🟢 NEW: Track when a message was deleted
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
 
