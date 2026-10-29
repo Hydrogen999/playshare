@@ -388,10 +388,9 @@ function addMessageToUI(m) {
   const mine = m.sender_id === myId;
 
   const wrap = document.createElement("div");
-  wrap.className = `relative flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble`;
+  // ADDED select-none HERE TO PREVENT TEXT HIGHLIGHTING
+  wrap.className = `relative flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble select-none`;
   wrap.dataset.msgId = m.id;
-  // Prevents the browser's double-tap-to-zoom from swallowing our double-tap
-  wrap.style.touchAction = "manipulation";
 
   let senderHtml = "";
   if (m.group_id && !mine) {
@@ -458,36 +457,30 @@ function addMessageToUI(m) {
       showEmojiPicker(e, m.id);
   });
   
-  // Long-press (touch)
   let pressTimer;
   wrap.addEventListener("touchstart", (e) => {
-      const t = e.touches && e.touches[0];
-      const pt = { clientX: t ? t.clientX : 0, clientY: t ? t.clientY : 0 };
+      const t = e.touches[0];
+      const pt = { clientX: t.clientX, clientY: t.clientY };
       clearTimeout(pressTimer);
       pressTimer = setTimeout(() => showEmojiPicker(pt, m.id), 500);
   }, { passive: true });
+
   wrap.addEventListener("touchmove", () => clearTimeout(pressTimer), { passive: true });
 
-  // Double-tap (touch) — dblclick is unreliable on phones, so detect it manually
+  // Double-tap for mobile
   let lastTap = 0;
   wrap.addEventListener("touchend", (e) => {
       clearTimeout(pressTimer);
       const now = Date.now();
-      if (now - lastTap < 350) {
-          lastTap = 0;
-          e.preventDefault(); // stops the browser's fake click/dblclick afterwards
-          const t = e.changedTouches && e.changedTouches[0];
-          showEmojiPicker({ clientX: t ? t.clientX : 0, clientY: t ? t.clientY : 0 }, m.id);
-      } else {
-          lastTap = now;
+      if (now - lastTap < 300) {
+          e.preventDefault();
+          const t = e.changedTouches[0];
+          showEmojiPicker({ clientX: t.clientX, clientY: t.clientY }, m.id);
       }
+      lastTap = now;
   });
-  wrap.addEventListener("touchcancel", () => clearTimeout(pressTimer));
 
-  // Stop the double-click from selecting text
-  wrap.addEventListener("mousedown", (e) => { if (e.detail > 1) e.preventDefault(); });
-
-  // Double-click (desktop) opens the emoji picker
+  // Double-click for desktop (THIS IS THE FIX)
   wrap.addEventListener("dblclick", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -500,8 +493,8 @@ function addMessageToUI(m) {
 
 // --- EMOJI PICKER LOGIC ---
 function showEmojiPicker(e, messageId) {
-    if (e.preventDefault && e.cancelable) e.preventDefault();
-    if (e.stopPropagation) e.stopPropagation();
+    if (e && e.preventDefault) e.preventDefault();
+    if (e && e.stopPropagation) e.stopPropagation();
     
     document.querySelectorAll(".emoji-picker").forEach(el => el.remove());
     document.querySelectorAll(".emoji-backdrop").forEach(el => el.remove());
@@ -513,8 +506,19 @@ function showEmojiPicker(e, messageId) {
     const picker = document.createElement("div");
     picker.className = "emoji-picker fixed z-[999] bg-slate-800 border border-slate-700 rounded-full shadow-2xl flex gap-1 p-1 animate-[pop_0.2s_ease-out]";
     
-    const x = e.clientX || (e.touches && e.touches[0] && e.touches[0].clientX) || e.pageX || 0;
-    const y = e.clientY || (e.touches && e.touches[0] && e.touches[0].clientY) || e.pageY || 0;
+    let x = e.clientX || (e.pageX) || 0;
+    let y = e.clientY || (e.pageY) || 0;
+
+    if (e.touches && e.touches.length > 0) {
+        x = e.touches[0].clientX;
+        y = e.touches[0].clientY;
+    } else if (e.changedTouches && e.changedTouches.length > 0) {
+        x = e.changedTouches[0].clientX;
+        y = e.changedTouches[0].clientY;
+    }
+
+    picker.style.left = `${x - 100}px`;
+    picker.style.top = `${y - 50}px`;
 
     EMOJIS.forEach(emoji => {
         const btn = document.createElement("button");
@@ -534,27 +538,12 @@ function showEmojiPicker(e, messageId) {
         picker.appendChild(btn);
     });
 
-    // Place it, then clamp so it never goes off-screen
-    picker.style.visibility = "hidden";
     document.body.appendChild(picker);
-    const pw = picker.offsetWidth || 280;
-    const ph = picker.offsetHeight || 48;
-    let left = x - pw / 2;
-    let top = y - ph - 12;
-    left = Math.max(8, Math.min(left, window.innerWidth - pw - 8));
-    if (top < 8) top = y + 16; // not enough room above, show below
-    top = Math.max(8, Math.min(top, window.innerHeight - ph - 8));
-    picker.style.left = `${left}px`;
-    picker.style.top = `${top}px`;
-    picker.style.visibility = "visible";
     
-    // Small delay so the same tap that opened it can't instantly close it
-    setTimeout(() => {
-        backdrop.addEventListener("pointerdown", () => {
-            picker.remove();
-            backdrop.remove();
-        });
-    }, 50);
+    backdrop.addEventListener("pointerdown", () => {
+        picker.remove();
+        backdrop.remove();
+    });
 }
 
 $("chatInput")?.addEventListener("input", () => {
