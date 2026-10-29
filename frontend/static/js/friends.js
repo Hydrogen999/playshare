@@ -486,6 +486,39 @@ $("chatForm").addEventListener("submit", async (e) => {
   }
 });
 
+// --- COIN GIFT MODAL LOGIC ---
+$("giftBtn").addEventListener("click", () => {
+    if (!activeChatUserId) return; // Only for DMs right now
+    
+    const modal = document.createElement("div");
+    modal.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
+    modal.innerHTML = `
+      <div class="w-full max-w-xs bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl text-center">
+        <h3 class="text-white font-bold text-lg mb-2">Send PlayCoins 🪙</h3>
+        <p class="text-slate-400 text-xs mb-4">Support your friend with a gift!</p>
+        
+        <input type="number" id="giftAmountInput" min="1" placeholder="Amount (e.g. 50)" class="w-full bg-slate-800 text-white text-center text-xl font-bold rounded-lg p-3 mb-4 focus:outline-none border border-slate-700 focus:border-amber-400" />
+        
+        <div class="flex gap-2">
+          <button id="cancelGiftBtn" class="flex-1 py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
+          <button id="sendGiftBtn" class="flex-1 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold text-sm shadow-[0_0_15px_rgba(245,158,11,0.4)]">Send Gift</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.querySelector("#cancelGiftBtn").onclick = () => modal.remove();
+    modal.querySelector("#sendGiftBtn").onclick = () => {
+        const amount = parseInt(modal.querySelector("#giftAmountInput").value, 10);
+        if (isNaN(amount) || amount <= 0) return alert("Enter a valid amount");
+        
+        if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+            dmSocket.send(JSON.stringify({ type: "dm:gift", target_id: activeChatUserId, amount }));
+            modal.remove();
+        }
+    };
+});
+
 $("chatImageInput").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   const target = currentTarget();
