@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import { avatarHTML } from "./avatars.js";
 
+// 🟢 INJECTING THE INSANE ANIMATED BACKGROUND CSS
 const style = document.createElement('style');
 style.textContent = `
   @keyframes move-stars { 0% { background-position: 0 0; } 100% { background-position: 500px 500px; } }
@@ -170,6 +171,9 @@ function escapeHTML(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&
 function premiumMark(isPremium) { return isPremium ? '<span class="text-amber-400 text-xs ml-1 drop-shadow-[0_0_5px_rgba(245,158,11,0.8)]">👑</span>' : ""; }
 
 function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSeen) {
+    const headerContainer = $("chatHeader");
+    if (!headerContainer) return; // 🟢 SAFETY CHECK: Prevents crash if header is not in DOM
+
     let statusHtml = "";
     if (isOnline) {
         statusHtml = `<span class="text-emerald-400 font-bold text-[11px] flex items-center gap-1 mt-0.5"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span> Online</span>`;
@@ -177,7 +181,6 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
         statusHtml = `<span class="text-slate-400 text-[11px] mt-0.5">Last seen ${timeAgo(lastSeen)}</span>`;
     }
     
-    const headerContainer = $("chatHeader");
     const isPremiumHeader = isPremium ? "premium-header" : "bg-slate-900/90 backdrop-blur-md border-b border-slate-800";
     headerContainer.className = `px-4 py-3 flex items-center gap-3 z-10 transition-all duration-500 ${isPremiumHeader}`;
 
@@ -190,7 +193,6 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
       <div class="flex items-center justify-between w-full relative z-10">
         <div class="flex items-center gap-3">
           
-          <!-- 🟢 FIXED: Only ONE Back Button, properly attached to closeChatPanel -->
           <button id="chatBackBtn" class="md:hidden text-slate-300 hover:text-white transition">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
           </button>
@@ -212,7 +214,6 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
         </div>
       </div>`;
 
-    // 🟢 Attach the Back Button Logic
     $("chatBackBtn")?.addEventListener("click", closeChatPanel);
     if ($("searchChatBtn")) $("searchChatBtn").onclick = toggleSearchUI;
 }
@@ -230,8 +231,11 @@ function toggleSearchUI() {
     `;
     
     const header = $("chatHeader");
-    header.style.position = "relative";
-    header.appendChild(searchBar);
+    if (header) {
+        header.style.position = "relative";
+        header.appendChild(searchBar);
+    }
+    
     $("chatSearchInput").focus();
 
     $("closeSearchBtn").onclick = toggleSearchUI;
@@ -257,9 +261,11 @@ function closeChatPanel() {
   $("chatSearchBar")?.remove(); 
   $("chatMessages").innerHTML = "";
   
-  // 🟢 Reset the Header back to normal
-  $("chatHeader").className = "px-4 py-3 border-b border-brand-500/20 flex items-center gap-3 bg-slate-900/40 backdrop-blur-md z-10";
-  $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400 font-medium">Select a conversation</div>`;
+  const header = $("chatHeader");
+  if (header) {
+      header.className = "px-4 py-3 border-b border-brand-500/20 flex items-center gap-3 bg-slate-900/40 backdrop-blur-md z-10";
+      $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400 font-medium">Select a conversation</div>`;
+  }
   
   $("chatForm")?.classList.add("hidden");
   removeReplyPreview();
@@ -435,17 +441,19 @@ async function openGroupChat(groupId, groupName) {
   activeChatUserId = null;
   openChatPanel();
 
-  $("chatHeader").className = "px-4 py-3 border-b border-brand-500/20 flex items-center gap-3 bg-slate-900/40 backdrop-blur-md z-10";
-  $("chatHeaderContent").innerHTML = `
-    <div class="flex items-center gap-3 w-full">
-      <button id="chatBackBtn" class="md:hidden text-slate-300 hover:text-white transition mr-2">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
-      </button>
-      <div class="h-10 w-10 rounded-full bg-slate-700 flex items-center justify-center text-lg">👥</div>
-      <div class="text-sm font-bold text-slate-100">${escapeHTML(groupName)}</div>
-    </div>`;
-  
-  $("chatBackBtn")?.addEventListener("click", closeChatPanel);
+  const header = $("chatHeader");
+  if (header) {
+      header.className = "px-4 py-3 border-b border-brand-500/20 flex items-center gap-3 bg-slate-900/40 backdrop-blur-md z-10";
+      $("chatHeaderContent").innerHTML = `
+        <div class="flex items-center gap-3 w-full">
+          <button id="chatBackBtn" class="md:hidden text-slate-300 hover:text-white transition mr-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <div class="h-10 w-10 rounded-full bg-slate-700 flex items-center justify-center text-lg">👥</div>
+          <div class="text-sm font-bold text-slate-100">${escapeHTML(groupName)}</div>
+        </div>`;
+      $("chatBackBtn")?.addEventListener("click", closeChatPanel);
+  }
 
   $("chatForm")?.classList.remove("hidden");
 
@@ -488,10 +496,11 @@ function setReply(msg) {
     `;
     
     const chatForm = $("chatForm");
-    chatForm.parentNode.insertBefore(preview, chatForm);
-    
-    $("cancelReplyBtn").onclick = () => { replyingToMessage = null; preview.remove(); };
-    $("chatInput")?.focus();
+    if (chatForm && chatForm.parentNode) {
+        chatForm.parentNode.insertBefore(preview, chatForm);
+        $("cancelReplyBtn").onclick = () => { replyingToMessage = null; preview.remove(); };
+        $("chatInput")?.focus();
+    }
 }
 
 function removeReplyPreview() {
@@ -722,8 +731,10 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
     `;
     
     const form = $("chatForm");
-    form.style.position = "relative";
-    form.appendChild(menu);
+    if (form) {
+        form.style.position = "relative";
+        form.appendChild(menu);
+    }
 
     setTimeout(() => {
         const closeMenu = () => { menu.remove(); document.removeEventListener("click", closeMenu); };
