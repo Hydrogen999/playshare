@@ -1,7 +1,6 @@
 import { api } from "./api.js";
 import { avatarHTML } from "./avatars.js";
 
-// 🟢 INJECTING THE INSANE ANIMATED BACKGROUND CSS
 const style = document.createElement('style');
 style.textContent = `
   @keyframes move-stars { 0% { background-position: 0 0; } 100% { background-position: 500px 500px; } }
@@ -171,7 +170,7 @@ function premiumMark(isPremium) { return isPremium ? '<span class="text-amber-40
 
 function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSeen) {
     const headerContainer = $("chatHeader");
-    if (!headerContainer) return; // SAFETY CHECK
+    if (!headerContainer) return;
 
     let statusHtml = "";
     if (isOnline) {
@@ -192,7 +191,8 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
       <div class="flex items-center justify-between w-full relative z-10">
         <div class="flex items-center gap-3">
           
-          <button id="chatBackBtn" class="md:hidden text-slate-300 hover:text-white transition">
+          <!-- Back button is hidden on desktop, shown on mobile -->
+          <button id="mobileBack" class="md:hidden text-slate-300 hover:text-white transition">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
           </button>
           
@@ -213,8 +213,12 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
         </div>
       </div>`;
 
-    $("chatBackBtn")?.addEventListener("click", closeChatPanel);
+    // Reattach event listeners
+    $("mobileBack")?.addEventListener("click", closeChatPanel);
     if ($("searchChatBtn")) $("searchChatBtn").onclick = toggleSearchUI;
+    if ($("startAudioCallBtn")) $("startAudioCallBtn").onclick = () => initiateCall(activeChatUserId, false, username, avatarId, isPremium);
+    if ($("startVideoCallBtn")) $("startVideoCallBtn").onclick = () => initiateCall(activeChatUserId, true, username, avatarId, isPremium);
+    if ($("inviteGameBtn")) $("inviteGameBtn").onclick = () => showChallengeModal(activeChatUserId, username);
 }
 
 function toggleSearchUI() {
@@ -270,6 +274,8 @@ function closeChatPanel() {
   removeReplyPreview();
   renderList();
 }
+// Global event listener for the static back button
+$("mobileBack")?.addEventListener("click", closeChatPanel);
 
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => { setActiveTab(btn.dataset.tab); renderList(); });
@@ -429,10 +435,6 @@ async function openChat(userId, username, avatarId, isPremium) {
 
   if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: activeChatUserId }));
   $("chatInput")?.focus();
-
-  if ($("startAudioCallBtn")) $("startAudioCallBtn").onclick = () => initiateCall(userId, false, username, avatarId, isPremium);
-  if ($("startVideoCallBtn")) $("startVideoCallBtn").onclick = () => initiateCall(userId, true, username, avatarId, isPremium);
-  if ($("inviteGameBtn")) $("inviteGameBtn").onclick = () => showChallengeModal(userId, username);
 }
 
 async function openGroupChat(groupId, groupName) {
@@ -445,13 +447,13 @@ async function openGroupChat(groupId, groupName) {
       header.className = "px-4 py-3 border-b border-brand-500/20 flex items-center gap-3 bg-slate-900/40 backdrop-blur-md z-10";
       $("chatHeaderContent").innerHTML = `
         <div class="flex items-center gap-3 w-full">
-          <button id="chatBackBtn" class="md:hidden text-slate-300 hover:text-white transition mr-2">
+          <button id="mobileBack" class="md:hidden text-slate-300 hover:text-white transition mr-2">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
           </button>
           <div class="h-10 w-10 rounded-full bg-slate-700 flex items-center justify-center text-lg">👥</div>
           <div class="text-sm font-bold text-slate-100">${escapeHTML(groupName)}</div>
         </div>`;
-      $("chatBackBtn")?.addEventListener("click", closeChatPanel);
+      $("mobileBack")?.addEventListener("click", closeChatPanel);
   }
 
   $("chatForm")?.classList.remove("hidden");
