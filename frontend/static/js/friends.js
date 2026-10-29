@@ -212,7 +212,7 @@ function premiumMark(isPremium) {
 function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSeen) {
     let statusHtml = "";
     if (isOnline) {
-        statusHtml = `<span class="text-emerald-400 font-bold text-[10px]">● Online</span>`;
+        statusHtml = `<span class="text-emerald-400 font-bold text-[10px] flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Online</span>`;
     } else if (lastSeen) {
         statusHtml = `<span class="text-slate-500 text-[10px]">Last seen ${timeAgo(lastSeen)}</span>`;
     }
@@ -252,14 +252,15 @@ function toggleSearchUI() {
 
     searchBar = document.createElement("div");
     searchBar.id = "chatSearchBar";
-    searchBar.className = "px-4 py-2 border-b border-brand-500/20 bg-slate-900/90 flex items-center gap-2 z-20";
+    searchBar.className = "px-4 py-2 border-b border-brand-500/20 bg-slate-900/90 flex items-center gap-2 z-20 absolute top-0 left-0 w-full shadow-lg backdrop-blur-md";
     searchBar.innerHTML = `
         <input type="text" id="chatSearchInput" placeholder="Search in conversation..." class="flex-1 bg-slate-800 text-white rounded-lg px-3 py-1.5 text-sm focus:outline-none border border-slate-700 focus:border-cyber-cyan" />
         <button id="closeSearchBtn" class="text-slate-400 hover:text-white font-bold px-2">✕</button>
     `;
     
     const header = $("chatHeader");
-    header.after(searchBar);
+    header.style.position = "relative";
+    header.appendChild(searchBar);
     $("chatSearchInput").focus();
 
     $("closeSearchBtn").onclick = toggleSearchUI;
@@ -504,22 +505,37 @@ async function loadMessages() {
   } catch (err) { console.error(err); }
 }
 
+// 🟢 NEW: Premium Bubble & Animation Logic
 function addMessageToUI(m, highlightQuery = null) {
   const el = $("chatMessages");
   if (!el) return;
   
   const mine = m.sender_id === myId;
   
-  // 🟢 Premium Message Styling
+  // Find if the sender is premium
   const senderFriend = friends.find(f => String(f.id) === String(m.sender_id));
   const isPremiumSender = senderFriend ? senderFriend.is_premium : false;
   
-  // If it's a premium user and NOT me, use the Royal Black & Gold theme
-  const premiumBubbleClass = (!mine && isPremiumSender) ? "bg-gradient-to-br from-slate-900 to-black border-2 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.3)] text-amber-100" : `bg-slate-800 text-slate-100`;
+  // Base styles
+  let bubbleClass = "";
+  let textClass = "";
+  
+  if (mine) {
+      bubbleClass = "bg-gradient-to-br from-brand-600 to-brand-700 text-white rounded-2xl rounded-tr-sm shadow-md";
+  } else if (isPremiumSender) {
+      // Royal Black & Gold for Premium
+      bubbleClass = "bg-gradient-to-br from-slate-900 to-black border border-amber-500/30 text-amber-50 shadow-[0_0_15px_rgba(245,158,11,0.2)] rounded-2xl rounded-tl-sm";
+  } else {
+      // Standard glassmorphism
+      bubbleClass = "bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 text-slate-100 rounded-2xl rounded-tl-sm shadow-sm";
+  }
 
   const wrap = document.createElement("div");
-  wrap.className = `relative group flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble animate-[slideUp_0.2s_ease-out]`;
+  wrap.className = `relative group flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble`;
   wrap.dataset.msgId = m.id;
+  
+  // 🟢 Smooth "Pop-In" Animation
+  wrap.style.animation = "messagePop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards";
 
   let senderHtml = "";
   if (m.group_id && !mine) {
@@ -533,13 +549,13 @@ function addMessageToUI(m, highlightQuery = null) {
   let contentHtml = "";
   
   if (m.is_deleted) {
-      contentHtml = `<div class="message-content text-sm italic text-slate-400 border border-slate-700/50 bg-slate-800/30 rounded-2xl px-3 py-2"><span class="mr-1">🚫</span> This message was deleted</div>`;
+      contentHtml = `<div class="text-sm italic text-slate-400 border border-slate-700/50 bg-slate-800/30 rounded-2xl px-3 py-2"><span class="mr-1">🚫</span> This message was deleted</div>`;
   }
   else if (m.media_url && m.media_url.startsWith("challenge:")) {
       const parts = m.media_url.split(":");
       const roomCode = parts[2];
       contentHtml = `
-        <div class="message-content rounded-xl border-2 border-cyber-pink bg-slate-900 p-4 min-w-[220px] shadow-[0_0_20px_rgba(236,72,153,0.3)]">
+        <div class="rounded-xl border-2 border-cyber-pink bg-slate-900 p-4 min-w-[220px] shadow-[0_0_20px_rgba(236,72,153,0.3)]">
             <div class="text-center mb-3">
                 <span class="text-3xl">⚔️</span>
                 <div class="text-white font-bold text-sm mt-1">${escapeHTML(m.content)}</div>
@@ -551,7 +567,7 @@ function addMessageToUI(m, highlightQuery = null) {
   else if (m.media_url && m.media_url.startsWith("gift:")) {
       const amount = m.media_url.split(":")[1];
       contentHtml = `
-        <div class="message-content rounded-2xl border-2 border-amber-400 bg-gradient-to-br from-amber-500/20 to-slate-900 p-4 min-w-[200px] shadow-[0_0_20px_rgba(245,158,11,0.3)]">
+        <div class="rounded-2xl border-2 border-amber-400 bg-gradient-to-br from-amber-500/20 to-slate-900 p-4 min-w-[200px] shadow-[0_0_20px_rgba(245,158,11,0.3)]">
             <div class="text-center">
                 <span class="text-4xl drop-shadow-[0_0_10px_rgba(245,158,11,0.8)]">🎁</span>
                 <div class="text-amber-400 font-black text-2xl mt-1">${amount} PC</div>
@@ -561,7 +577,7 @@ function addMessageToUI(m, highlightQuery = null) {
       `;
   }
   else if (m.content && (m.content.includes("Missed audio call") || m.content.includes("Missed video call"))) {
-    contentHtml = `<div class="message-content text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
+    contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
   } 
   else if (m.content) {
     let renderedContent = escapeHTML(m.content);
@@ -570,7 +586,7 @@ function addMessageToUI(m, highlightQuery = null) {
         renderedContent = renderedContent.replace(regex, `<mark class="bg-amber-400 text-black rounded px-0.5">$1</mark>`);
     }
 
-    contentHtml = `<div class="message-content max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : premiumBubbleClass}">${renderedContent}</div>`;
+    contentHtml = `<div class="message-content max-w-[80%] px-4 py-2 text-[15px] break-words ${bubbleClass}">${renderedContent}</div>`;
   }
 
   let mediaHtml = "";
@@ -583,22 +599,31 @@ function addMessageToUI(m, highlightQuery = null) {
     }
   }
 
-  let statusHtml = mine ? `<div class="text-[10px] text-slate-500 mt-0.5"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> · ${timeAgo(m.created_at)}</div>` : `<div class="text-[10px] text-slate-500 mt-0.5">${timeAgo(m.created_at)}</div>`;
+  // 🟢 Move timestamp inside the bubble for a cleaner look
+  const timeStr = timeAgo(m.created_at);
+  let statusHtml = mine 
+    ? `<div class="text-[10px] text-brand-200/70 mt-1 flex justify-end items-center gap-1"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> ${timeStr}</div>` 
+    : `<div class="text-[10px] text-slate-500 mt-1">${timeStr}</div>`;
 
   if (m.read && mine) {
-    setTimeout(() => { const s = wrap.querySelector('.msg-status'); if (s) s.classList.add("text-cyan-400"); }, 10);
+    setTimeout(() => { const s = wrap.querySelector('.msg-status'); if (s) s.classList.add("text-white"); }, 10);
   }
 
   let deleteBtnHtml = "";
   if (mine && !m.is_deleted) {
       deleteBtnHtml = `
-        <button class="delete-btn absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-500 hover:text-red-400 bg-slate-900/80 rounded-full border border-slate-700" title="Delete Message">
+        <button class="delete-btn absolute -left-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 scale-75 group-hover:scale-100 p-2 text-slate-400 hover:text-red-400 bg-slate-900/90 rounded-full border border-slate-700 shadow-lg" title="Delete Message">
             🗑️
         </button>
       `;
   }
 
-  wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}${deleteBtnHtml}`;
+  // Wrap content in a flex container for better alignment
+  if (m.content && !m.is_deleted && !m.media_url) {
+      wrap.innerHTML = `${senderHtml}${replyHtml}<div class="${bubbleClass} px-4 py-2 flex flex-col">${contentHtml}${statusHtml}</div>${deleteBtnHtml}`;
+  } else {
+      wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}${deleteBtnHtml}`;
+  }
 
   if (deleteBtnHtml) {
       wrap.querySelector(".delete-btn").onclick = (e) => {
