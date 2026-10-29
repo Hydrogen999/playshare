@@ -199,6 +199,78 @@ def _clean_url(value):
         return value
     return None
 
+# --- NEW: Save Gift and Transfer Coins ---
+def _save_gift_and_transfer(sender_id, target_id, amount) -> dict:
+    with SessionLocal() as db:
+        try:
+            # 1. Check sender's balance securely (locks the row)
+            sender_acc = db.query(TokenAccount).filter(TokenAccount.user_id == sender_id).with_for_update().first()
+            target_acc = db.query(TokenAccount).filter(TokenAccount.user_id == target_id).with_for_update().first()
+            
+            if not sender_acc or not target_acc or sender_acc.balance < amount:
+                return {"ok": False, "error": "Insufficient balance"}
+
+            # 2. Perform the transfer
+            sender_acc.balance -= amount
+            target_acc.balance += amount
+            
+            # 3. Update the cached profile balances
+            sender_prof = db.query(Profile).filter(Profile.user_id == sender_id).first()
+            target_prof = db.query(Profile).filter(Profile.user_id == target_id).first()
+            if sender_prof: sender_prof.tokens_cached -= amount
+            if target_prof: target_prof.tokens_cached += amount
+
+            # 4. Create Ledger Log
+            tx = LedgerTransaction(type="gift", notes=f"Gift from {sender_id} to {target_id}")
+            db.add(tx)
+            db.flush()
+            
+            db.add(LedgerEntry(transaction_id=tx.id, account_id=sender_id, delta=-amount, balance_after=sender_acc.balance))
+            db.add(LedgerEntry(transaction_id=tx.id, account_id=target_id, delta=amount, balance_after=target_acc.balance))
+
+            # 5. Save the Chat Message
+            mm = DirectMessage(
+                sender_id=sender_id,
+                recipient_id=target_id,
+                content=f"Sent a gift of {amount} PlayCoins",
+                media_url=f"gift:{amount}" # We encode the gift here!
+            )
+            db.add(mm)
+            db.commit()
+            db.refresh(mm)
+
+            return {
+                "ok": True,
+                "message": _dm_payload(mm),
+                "new_sender_balance": sender_acc.balance
+            }
+        except Exception as e:
+            db.rollback()
+            logger.exception("Gift transfer failed")
+            return {"ok": False, "error": "Transaction failed"}
+
+async def handle_gift(user_id, msg):
+    target_id = msg.get("target_id")
+    try:
+        amount = int(msg.get("amount", 0))
+    except (TypeError, ValueError):
+        return
+
+    if not target_id or amount <= 0:
+        return
+
+    res = await asyncio.to_thread(_save_gift_and_transfer, user_id, target_id, amount)
+    
+    if res.get("ok"):
+        out_msg = res["message"]
+        # Send to both
+        await dm_hub.send_to_users([target_id, user_id], out_msg)
+        
+        # Send a balance update ping to the sender so their dashboard updates
+        await dm_hub.send_to_user(user_id, {"type": "balance:update", "new_balance": res["new_sender_balance"]})
+    else:
+        await dm_hub.send_to_user(user_id, {"type": "dm:error", "error": res.get("error", "Gift failed")})
+
 
 # --------------------------------------------------------------------------- #
 # Message handlers
