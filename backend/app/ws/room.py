@@ -409,8 +409,17 @@ async def room_ws(
                 return
         else:
             if user_id not in {m.user_id for m in members}:
-                await ws.close(code=status.WS_1008_POLICY_VIOLATION)
-                return
+                # --- FIX: AUTO-JOIN IF ROOM IS WAITING AND HAS SPACE ---
+                if room.status == "waiting" and len(members) < (room.max_players or 4):
+                    new_member = RoomMember(room_id=room_id, user_id=user_id)
+                    db.add(new_member)
+                    db.commit()
+                    members = db.query(RoomMember).filter(RoomMember.room_id == room_id).all()
+                else:
+                    await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+                    return
+            # --- FIX END ---
+
             if reconnect_token and not presence_svc.validate_token(db, room_id, user_id, reconnect_token):
                 await ws.close(code=status.WS_1008_POLICY_VIOLATION)
                 return
