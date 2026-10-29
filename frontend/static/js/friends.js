@@ -20,12 +20,12 @@ let isMuted = false;
 let callTimeout = null;
 let incomingCallModal = null;
 
+// 🟢 FREE STUN SERVERS (No account needed)
 const ICE_SERVERS = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }
+        { urls: "stun:stun.cloudflare.com:3478" } 
     ]
 };
 
@@ -124,6 +124,9 @@ function connectDMSocket() {
             
             if (reactBar) {
                 if (msg.action === "add") {
+                    const existing = reactBar.querySelector(`[data-user="${msg.user_id}"]`);
+                    if (existing) existing.remove(); // Remove old emoji from same user
+                    
                     const span = document.createElement("span");
                     span.className = "text-xs reaction-item";
                     span.dataset.user = msg.user_id;
@@ -449,8 +452,22 @@ function addMessageToUI(m) {
   }
 
   wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}`;
+
+  // --- RENDER REACTIONS ---
+  if (m.reactions && m.reactions.length > 0) {
+      const reactBar = document.createElement("div");
+      reactBar.className = "reaction-bar flex flex-wrap gap-1 mt-1 absolute -bottom-3 right-0 bg-slate-900 border border-slate-700 rounded-full px-2 py-0.5 shadow-lg z-10";
+      m.reactions.forEach(r => {
+          const span = document.createElement("span");
+          span.className = "text-xs reaction-item";
+          span.dataset.user = r.user_id;
+          span.dataset.emoji = r.emoji;
+          span.textContent = r.emoji;
+          reactBar.appendChild(span);
+      });
+      wrap.appendChild(reactBar);
+  }
   
-  // --- NEW: Reaction Gestures ---
   wrap.addEventListener("dblclick", (e) => showEmojiPicker(e, m.id));
   
   let pressTimer;
@@ -912,7 +929,13 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
       if (!remoteStream) remoteStream = new MediaStream();
       remoteStream.addTrack(event.track);
       if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
-      if ($("remoteAudio")) $("remoteAudio").srcObject = remoteStream;
+      
+      const audioEl = $("remoteAudio");
+      if (audioEl) { 
+          audioEl.srcObject = remoteStream; 
+          audioEl.play().catch(e => console.log("Autoplay blocked", e)); 
+      }
+      
       stopRingtone();
       startCallTimer();
     };
@@ -1004,7 +1027,13 @@ function showIncomingCall(senderId, offer, isVideo) {
         if (!remoteStream) remoteStream = new MediaStream();
         remoteStream.addTrack(event.track);
         if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
-        if ($("remoteAudio")) $("remoteAudio").srcObject = remoteStream;
+        
+        const audioEl = $("remoteAudio");
+        if (audioEl) { 
+            audioEl.srcObject = remoteStream; 
+            audioEl.play().catch(e => console.log("Autoplay blocked", e)); 
+        }
+        
         startCallTimer();
       };
 
