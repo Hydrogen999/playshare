@@ -19,7 +19,24 @@ let isVideoCall = false;
 let isMuted = false;
 let callTimeout = null;
 let incomingCallModal = null;
-const STUN_SERVER = "stun:stun.l.google.com:19302";
+
+// --- TURN Servers for reliable connection on mobile data ---
+const ICE_SERVERS = {
+    iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        {
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        }
+    ]
+};
 
 // --- Voice Note Variables ---
 let mediaRecorder = null;
@@ -73,7 +90,6 @@ function connectDMSocket() {
     else if (msg.type === "group:created") {
       await refreshAll(); 
       if (activeTab === "groups") renderList();
-      
       const toast = document.createElement("div");
       toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-brand-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold animate-bounce cursor-pointer flex items-center gap-2";
       toast.innerHTML = `👥 You were added to "<b>${escapeHTML(msg.group.name)}</b>"`;
@@ -92,7 +108,7 @@ function connectDMSocket() {
         document.querySelectorAll(".msg-status.mine").forEach(el => { el.textContent = "✓✓"; el.classList.add("text-cyan-400"); });
       }
     }
-    else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer);
+    else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer, !!msg.is_video);
     else if (msg.type === "call:answer") {
       if (pc) { clearTimeout(callTimeout); pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); }
     }
@@ -295,8 +311,6 @@ async function openChat(userId, username, avatarId, isPremium) {
 
   $("startAudioCallBtn").onclick = () => initiateCall(userId, false, username, avatarId, isPremium);
   $("startVideoCallBtn").onclick = () => initiateCall(userId, true, username, avatarId, isPremium);
-  
-  // NEW: Challenge Button Logic
   $("inviteGameBtn").onclick = () => showChallengeModal(userId, username);
 }
 
@@ -351,14 +365,11 @@ function addMessageToUI(m) {
   let replyHtml = m.reply_to_status_id ? `<div class="text-[10px] text-brand-400 mb-1 px-2 border-l-2 border-brand-500">Replied to a status</div>` : "";
 
   let contentHtml = "";
-  
-  // NEW: Challenge Card Rendering
   if (m.media_url && m.media_url.startsWith("challenge:")) {
       const parts = m.media_url.split(":");
       const gameSlug = parts[1];
       const roomCode = parts[2];
       const gameName = gameSlug.charAt(0).toUpperCase() + gameSlug.slice(1);
-      
       contentHtml = `
         <div class="rounded-xl border-2 border-cyber-pink bg-slate-900 p-4 min-w-[220px] shadow-[0_0_20px_rgba(236,72,153,0.3)]">
             <div class="text-center mb-3">
@@ -465,15 +476,12 @@ $("chatImageInput").addEventListener("change", async (e) => {
   }
 });
 
-// --- NEW: CHALLENGE MODAL LOGIC ---
 function showChallengeModal(targetId, targetName) {
     const modal = document.createElement("div");
     modal.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
     modal.innerHTML = `
       <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl text-center">
         <h3 class="text-white font-bold text-lg mb-4">Challenge ${escapeHTML(targetName)}</h3>
-        <p class="text-slate-400 text-xs mb-4">Pick a game to send a match invitation.</p>
-        
         <div class="grid grid-cols-3 gap-2 mb-6">
             <button data-game="ludo" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
                 <span class="text-2xl">🎯</span><span class="text-xs font-bold text-white">Ludo</span>
@@ -485,7 +493,6 @@ function showChallengeModal(targetId, targetName) {
                 <span class="text-2xl">♟️</span><span class="text-xs font-bold text-white">Chess</span>
             </button>
         </div>
-
         <button id="cancelChallengeBtn" class="w-full py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
       </div>
     `;
@@ -498,10 +505,7 @@ function showChallengeModal(targetId, targetName) {
             const gameSlug = btn.dataset.game;
             btn.innerHTML = `<span class="text-xs text-white">Creating...</span>`;
             try {
-                // 1. Create the room
                 const res = await api.createRoom({ game_slug: gameSlug, max_players: 2, is_public: false });
-                
-                // 2. Send the challenge message via WebSocket
                 const gameName = gameSlug.charAt(0).toUpperCase() + gameSlug.slice(1);
                 dmSocket.send(JSON.stringify({
                     type: "dm:challenge",
@@ -510,7 +514,6 @@ function showChallengeModal(targetId, targetName) {
                     game_slug: gameSlug,
                     room_code: res.id
                 }));
-
                 modal.remove();
             } catch (err) {
                 alert("Failed to create game room: " + err.message);
@@ -608,10 +611,11 @@ $("voiceNoteBtn").addEventListener("click", async () => {
 });
 
 // ---------------------------------------------------------
-// 4. WEBRTC CALLING SYSTEM
+// 4. WEBRTC CALLING SYSTEM (FIXED)
 // ---------------------------------------------------------
 function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   if ($("videoCallOverlay")) $("videoCallOverlay").remove();
+  
   const overlay = document.createElement("div");
   overlay.id = "videoCallOverlay";
   overlay.className = "fixed inset-0 z-[999] bg-[#0b141a] flex flex-col items-center justify-between";
@@ -627,20 +631,25 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     </div>
   `;
 
+  // The remote audio element is ALWAYS needed, even for video calls
+  let audioHtml = `<audio id="remoteAudio" autoplay playsinline></audio>`;
+
   if (isVideo) {
     overlay.innerHTML = `
+      ${audioHtml}
       <video id="remoteVideo" autoplay playsinline class="absolute inset-0 w-full h-full object-cover z-0"></video>
       ${header}
-      <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-slate-700 shadow-2xl z-20"></video>
+      <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-slate-700 shadow-2xl z-20 transition-all"></video>
+      
       <div class="relative z-10 mb-8 bg-[#1f2c33]/90 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-6 shadow-2xl">
-        <button id="btnVideo" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button>
+        <button id="btnToggleVideo" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button>
         <button id="btnMute" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button>
         <button id="btnEnd" class="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center text-white text-2xl shadow-lg shadow-red-500/50">📞</button>
       </div>
     `;
   } else {
     overlay.innerHTML = `
-      <audio id="remoteAudio" autoplay playsinline></audio>
+      ${audioHtml}
       <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
       ${header}
       <div class="relative z-10 flex-1 flex flex-col items-center justify-center">
@@ -648,7 +657,7 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
       </div>
       <div class="relative z-10 mb-12 bg-[#1f2c33]/90 backdrop-blur-md w-11/12 max-w-sm px-6 py-6 rounded-3xl grid grid-cols-3 gap-6 shadow-2xl">
         <div class="flex flex-col items-center gap-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🔊</button><span class="text-xs text-slate-300">Speaker</span></div>
-        <div class="flex flex-col items-center gap-2"><button id="btnSwitchToVideo" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button><span class="text-xs text-slate-300">Video</span></div>
+        <div class="flex flex-col items-center gap-2"><button id="btnToggleVideo" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button><span class="text-xs text-slate-300">Video</span></div>
         <div class="flex flex-col items-center gap-2"><button id="btnMute" class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button><span class="text-xs text-slate-300">Mute</span></div>
         <div class="flex flex-col items-center gap-2 mt-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">•••</button><span class="text-xs text-slate-300">More</span></div>
         <div class="flex flex-col items-center gap-2 mt-2"><button class="w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">↗</button><span class="text-xs text-slate-300">Share</span></div>
@@ -658,8 +667,26 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   }
   document.body.appendChild(overlay);
 
+  // Force audio playback (mobile browsers block it sometimes)
+  setTimeout(() => {
+      const audioEl = $("remoteAudio");
+      if (audioEl && remoteStream) {
+          audioEl.srcObject = remoteStream;
+          audioEl.play().catch(e => {
+              console.log("Autoplay blocked, showing unmute button", e);
+              // If blocked, show a prompt to tap the screen
+              const prompt = document.createElement("div");
+              prompt.className = "absolute inset-0 z-[9999] bg-black/80 flex items-center justify-center text-white font-bold text-lg cursor-pointer";
+              prompt.textContent = "Tap to unmute";
+              prompt.onclick = () => { audioEl.play(); prompt.remove(); };
+              overlay.appendChild(prompt);
+          });
+      }
+  }, 500);
+
   $("btnEnd").onclick = endCall;
 
+  // Toggle Mute
   isMuted = false;
   $("btnMute").onclick = () => {
     if (localStream) {
@@ -673,32 +700,40 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     }
   };
 
-  if (!isVideo) {
-    $("btnSwitchToVideo").onclick = async () => {
-      try {
-        const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        const videoTrack = videoStream.getVideoTracks()[0];
-
-        if (pc) {
-          const senders = pc.getSenders();
-          const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-          if (videoSender) videoSender.replaceTrack(videoTrack);
-          else pc.addTrack(videoTrack, videoStream);
-        }
-
-        if (localStream) localStream.addTrack(videoTrack);
-
-        const name = targetName, av = targetAvatar, pr = isPremium;
-        $("videoCallOverlay").remove();
-        createVideoOverlay(true, name, av, pr);
-        $("remoteVideo").srcObject = remoteStream;
-        $("localVideo").srcObject = localStream;
-        startCallTimer();
-      } catch (e) {
-        alert("Camera access denied.");
+  // Toggle Video / Audio Mode
+  $("btnToggleVideo").onclick = async () => {
+      if (!localStream) return;
+      
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+          // Switch to Audio Only
+          videoTrack.enabled = false;
+          if ($("localVideo")) $("localVideo").style.display = "none";
+          if ($("remoteVideo")) $("remoteVideo").style.display = "none";
+          $("btnToggleVideo").textContent = "📹";
+      } else {
+          // Switch to Video
+          try {
+              const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+              const newVideoTrack = stream.getVideoTracks()[0];
+              localStream.addTrack(newVideoTrack);
+              
+              if (pc) {
+                  const senders = pc.getSenders();
+                  const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+                  if (videoSender) videoSender.replaceTrack(newVideoTrack);
+                  else pc.addTrack(newVideoTrack, localStream);
+              }
+              
+              if ($("localVideo")) {
+                  $("localVideo").style.display = "block";
+                  $("localVideo").srcObject = localStream;
+              }
+              if ($("remoteVideo")) $("remoteVideo").style.display = "block";
+              $("btnToggleVideo").textContent = "📵";
+          } catch (e) { alert("Camera access denied."); }
       }
-    };
-  }
+  };
 }
 
 let callTimerInterval = null;
@@ -726,7 +761,7 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
     if ($("localVideo")) $("localVideo").srcObject = localStream;
 
-    pc = new RTCPeerConnection({ iceServers: [{ urls: STUN_SERVER }] });
+    pc = new RTCPeerConnection(ICE_SERVERS);
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     pc.ontrack = (event) => {
@@ -774,16 +809,16 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
   }
 }
 
-function showIncomingCall(senderId, offer) {
+function showIncomingCall(senderId, offer, isVideo) {
   playRingtone();
   const modal = document.createElement("div");
   incomingCallModal = modal;
   modal.className = "fixed inset-0 z-[9999] bg-[#0b141a] flex flex-col items-center justify-between p-8";
-  const caller = friends.find(f => f.id === senderId) || { username: "Unknown", avatar_id: "fox", is_premium: false };
+  const caller = friends.find(f => String(f.id) === String(senderId)) || { username: "Unknown", avatar_id: "fox", is_premium: false };
 
   modal.innerHTML = `
     <div class="text-center mt-12 w-full">
-      <div class="text-slate-400 text-sm mb-2">Incoming ${offer.is_video ? 'Video' : 'Audio'} Call...</div>
+      <div class="text-slate-400 text-sm mb-2">Incoming ${isVideo ? 'Video' : 'Audio'} Call...</div>
       <div class="w-40 h-40 mx-auto rounded-full border-4 border-slate-700 overflow-hidden shadow-2xl animate-pulse">${avatarHTML(caller.avatar_id, "xl", null, caller.is_premium)}</div>
       <div class="text-white font-bold text-3xl mt-6">${escapeHTML(caller.username)}</div>
     </div>
@@ -802,7 +837,7 @@ function showIncomingCall(senderId, offer) {
 
   $("rejectCallBtn").onclick = () => {
     stopRingtone();
-    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:reject", target_id: senderId, call_type: offer.is_video ? 'video' : 'audio' }));
+    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:reject", target_id: senderId, call_type: isVideo ? 'video' : 'audio' }));
     modal.remove();
     incomingCallModal = null;
   };
@@ -812,15 +847,15 @@ function showIncomingCall(senderId, offer) {
     modal.remove();
     incomingCallModal = null;
     currentCallTargetId = senderId;
-    isVideoCall = offer.is_video;
+    isVideoCall = isVideo;
 
-    createVideoOverlay(offer.is_video || false, caller.username, caller.avatar_id, caller.is_premium);
+    createVideoOverlay(isVideo, caller.username, caller.avatar_id, caller.is_premium);
 
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: offer.is_video || false });
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
       if ($("localVideo")) $("localVideo").srcObject = localStream;
 
-      pc = new RTCPeerConnection({ iceServers: [{ urls: STUN_SERVER }] });
+      pc = new RTCPeerConnection(ICE_SERVERS);
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
       pc.ontrack = (event) => {
@@ -851,6 +886,7 @@ function showIncomingCall(senderId, offer) {
   };
 }
 
+// --- RINGTONE ---
 let ringtoneCtx = null;
 let ringtoneInterval = null;
 
