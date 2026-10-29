@@ -20,7 +20,6 @@ let isMuted = false;
 let callTimeout = null;
 let incomingCallModal = null;
 
-// 🟢 Using Cloudflare STUN (Free, no account needed)
 const ICE_SERVERS = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
@@ -69,6 +68,21 @@ function connectDMSocket() {
 
   dmSocket.addEventListener("message", async (ev) => {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+
+    // 🟢 Handle Presence Updates
+    if (msg.type === "presence:update") {
+        const friend = friends.find(f => String(f.id) === String(msg.user_id));
+        if (friend) {
+            friend.is_online = (msg.status === "online");
+            friend.last_seen = msg.last_seen;
+            renderList();
+            
+            if (String(activeChatUserId) === String(msg.user_id)) {
+                updateChatHeaderStatus(friend.username, friend.avatar_id, friend.is_premium, friend.is_online, friend.last_seen);
+            }
+        }
+        return;
+    }
 
     if (msg.type === "dm:new") {
       if (activeChatUserId === msg.sender_id || activeChatUserId === msg.recipient_id) {
@@ -141,19 +155,15 @@ function connectDMSocket() {
             }
         }
     }
-    // 🟢 NEW: Handle Message Deletion
     else if (msg.type === "dm:deleted") {
         const msgWrap = document.querySelector(`[data-msg-id="${msg.message_id}"]`);
         if (msgWrap) {
-            // Replace content with deleted text
             const contentContainer = msgWrap.querySelector(".message-content");
             if (contentContainer) {
                 contentContainer.innerHTML = `<div class="text-sm italic text-slate-400 border border-slate-700/50 bg-slate-800/30 rounded-2xl px-3 py-2"><span class="mr-1">🚫</span> This message was deleted</div>`;
             }
-            // Remove media and reactions
             msgWrap.querySelector(".message-media")?.remove();
             msgWrap.querySelector(".reaction-bar")?.remove();
-            // Hide delete button
             msgWrap.querySelector(".delete-btn")?.remove();
         }
     }
@@ -189,11 +199,40 @@ function connectDMSocket() {
 function timeAgo(iso) {
   if (!iso) return "";
   const diff = Math.max(0, Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return "now"; if (diff < 3600) return `${Math.floor(diff / 60)}m`; if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  return `${Math.floor(diff / 86400)}d`;
+  if (diff < 60) return "now"; 
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`; 
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 function escapeHTML(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function crownMark(isPremium) { return isPremium ? ' <span class="text-amber-400 text-xs">👑</span>' : ""; }
+
+// 🟢 Helper to update the Chat Header
+function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSeen) {
+    let statusHtml = "";
+    if (isOnline) {
+        statusHtml = `<span class="text-emerald-400 font-bold text-[10px]">● Online</span>`;
+    } else if (lastSeen) {
+        statusHtml = `<span class="text-slate-500 text-[10px]">Last seen ${timeAgo(lastSeen)}</span>`;
+    }
+    
+    $("chatHeaderContent").innerHTML = `
+      <div class="flex items-center justify-between w-full">
+        <div class="flex items-center gap-3">
+          ${avatarHTML(avatarId, "sm", null, isPremium)}
+          <div>
+            <div class="text-sm font-bold text-slate-100 flex items-center gap-1">${escapeHTML(username)}${crownMark(isPremium)}</div>
+            <div id="typingIndicator" class="hidden"></div>
+            ${statusHtml}
+          </div>
+        </div>
+        <div class="flex items-center gap-1">
+          <button id="startAudioCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Audio Call">📞</button>
+          <button id="startVideoCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Video Call">📹</button>
+          <button id="inviteGameBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Challenge">⚔️</button>
+        </div>
+      </div>`;
+}
 
 function openChatPanel() { document.body.classList.add("chat-open"); }
 function closeChatPanel() {
@@ -247,15 +286,20 @@ function renderList() {
 
   if (activeTab === "friends") {
     if (friends.length === 0) { list.innerHTML = `<div class="p-6 text-center text-slate-500 text-sm">No friends yet.</div>`; return; }
-    list.innerHTML = friends.map((f) => `
+    list.innerHTML = friends.map((f) => {
+      const onlineDot = f.is_online ? `<span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 border-2 border-slate-900"></span>` : "";
+      return `
       <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50">
-        <div class="flex-shrink-0 cursor-pointer" data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}">${avatarHTML(f.avatar_id, "sm", f.frame_color, f.is_premium)}</div>
+        <div class="relative flex-shrink-0 cursor-pointer" data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}">
+            ${avatarHTML(f.avatar_id, "sm", f.frame_color, f.is_premium)}
+            ${onlineDot}
+        </div>
         <div class="flex-1 min-w-0">
           <div class="text-sm font-semibold truncate flex items-center gap-1">${escapeHTML(f.username)}${crownMark(f.is_premium)} ${f.streak_count > 0 ? `<span class="text-orange-500 font-bold text-[10px]">🔥 ${f.streak_count}</span>` : ""}</div>
           <div class="text-xs text-slate-500">Level ${f.level}</div>
         </div>
         <button data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}" class="text-xs px-2 py-1.5 rounded bg-brand-600 hover:bg-brand-700 text-white font-bold transition">Chat</button>
-      </div>`).join("");
+      </div>`}).join("");
     wireFriendRows(); return;
   }
 
@@ -346,21 +390,11 @@ async function openChat(userId, username, avatarId, isPremium) {
   activeGroupId = null;
   openChatPanel();
 
-  $("chatHeaderContent").innerHTML = `
-    <div class="flex items-center justify-between w-full">
-      <div class="flex items-center gap-3">
-        ${avatarHTML(avatarId, "sm", null, isPremium)}
-        <div>
-          <div class="text-sm font-bold text-slate-100 flex items-center gap-1">${escapeHTML(username)}${crownMark(isPremium)}</div>
-          <div id="typingIndicator" class="text-[10px] text-brand-400 hidden"></div>
-        </div>
-      </div>
-      <div class="flex items-center gap-1">
-        <button id="startAudioCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Audio Call">📞</button>
-        <button id="startVideoCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Video Call">📹</button>
-        <button id="inviteGameBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Challenge">⚔️</button>
-      </div>
-    </div>`;
+  const friend = friends.find(f => String(f.id) === String(userId));
+  const isOnline = friend ? friend.is_online : false;
+  const lastSeen = friend ? friend.last_seen : null;
+
+  updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSeen);
 
   $("chatForm")?.classList.remove("hidden");
   await loadMessages();
@@ -428,7 +462,6 @@ function addMessageToUI(m) {
 
   let contentHtml = "";
   
-  // 🟢 Handle Deleted Messages
   if (m.is_deleted) {
       contentHtml = `<div class="message-content text-sm italic text-slate-400 border border-slate-700/50 bg-slate-800/30 rounded-2xl px-3 py-2"><span class="mr-1">🚫</span> This message was deleted</div>`;
   }
@@ -480,7 +513,6 @@ function addMessageToUI(m) {
     setTimeout(() => { const s = wrap.querySelector('.msg-status'); if (s) s.classList.add("text-cyan-400"); }, 10);
   }
 
-  // 🟢 Add Delete Button if it's my message
   let deleteBtnHtml = "";
   if (mine && !m.is_deleted) {
       deleteBtnHtml = `
@@ -492,7 +524,6 @@ function addMessageToUI(m) {
 
   wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}${deleteBtnHtml}`;
 
-  // Add delete listener
   if (deleteBtnHtml) {
       wrap.querySelector(".delete-btn").onclick = (e) => {
           e.stopPropagation();
@@ -504,7 +535,6 @@ function addMessageToUI(m) {
       };
   }
 
-  // --- RENDER REACTIONS ---
   if (m.reactions && m.reactions.length > 0) {
       const reactBar = document.createElement("div");
       reactBar.className = "reaction-bar flex flex-wrap gap-1 mt-1 absolute -bottom-3 right-0 bg-slate-900 border border-slate-700 rounded-full px-2 py-0.5 shadow-lg z-10";
@@ -1151,9 +1181,6 @@ function endCall() {
   
   const audioEl = $("globalRemoteAudio");
   if (audioEl) audioEl.remove();
-  
-  const debugBox = $("webrtcDebugBox");
-  if (debugBox) debugBox.remove();
 
   currentCallTargetId = null;
 }
