@@ -141,6 +141,22 @@ function connectDMSocket() {
             }
         }
     }
+    // 🟢 NEW: Handle Message Deletion
+    else if (msg.type === "dm:deleted") {
+        const msgWrap = document.querySelector(`[data-msg-id="${msg.message_id}"]`);
+        if (msgWrap) {
+            // Replace content with deleted text
+            const contentContainer = msgWrap.querySelector(".message-content");
+            if (contentContainer) {
+                contentContainer.innerHTML = `<div class="text-sm italic text-slate-400 border border-slate-700/50 bg-slate-800/30 rounded-2xl px-3 py-2"><span class="mr-1">🚫</span> This message was deleted</div>`;
+            }
+            // Remove media and reactions
+            msgWrap.querySelector(".message-media")?.remove();
+            msgWrap.querySelector(".reaction-bar")?.remove();
+            // Hide delete button
+            msgWrap.querySelector(".delete-btn")?.remove();
+        }
+    }
     else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer, !!msg.is_video);
     else if (msg.type === "call:answer") {
       if (pc) { 
@@ -399,7 +415,7 @@ function addMessageToUI(m) {
   const mine = m.sender_id === myId;
 
   const wrap = document.createElement("div");
-  wrap.className = `relative flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble`;
+  wrap.className = `relative group flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble`;
   wrap.dataset.msgId = m.id;
 
   let senderHtml = "";
@@ -411,11 +427,16 @@ function addMessageToUI(m) {
   let replyHtml = m.reply_to_status_id ? `<div class="text-[10px] text-brand-400 mb-1 px-2 border-l-2 border-brand-500">Replied to a status</div>` : "";
 
   let contentHtml = "";
-  if (m.media_url && m.media_url.startsWith("challenge:")) {
+  
+  // 🟢 Handle Deleted Messages
+  if (m.is_deleted) {
+      contentHtml = `<div class="message-content text-sm italic text-slate-400 border border-slate-700/50 bg-slate-800/30 rounded-2xl px-3 py-2"><span class="mr-1">🚫</span> This message was deleted</div>`;
+  }
+  else if (m.media_url && m.media_url.startsWith("challenge:")) {
       const parts = m.media_url.split(":");
       const roomCode = parts[2];
       contentHtml = `
-        <div class="rounded-xl border-2 border-cyber-pink bg-slate-900 p-4 min-w-[220px] shadow-[0_0_20px_rgba(236,72,153,0.3)]">
+        <div class="message-content rounded-xl border-2 border-cyber-pink bg-slate-900 p-4 min-w-[220px] shadow-[0_0_20px_rgba(236,72,153,0.3)]">
             <div class="text-center mb-3">
                 <span class="text-3xl">⚔️</span>
                 <div class="text-white font-bold text-sm mt-1">${escapeHTML(m.content)}</div>
@@ -427,7 +448,7 @@ function addMessageToUI(m) {
   else if (m.media_url && m.media_url.startsWith("gift:")) {
       const amount = m.media_url.split(":")[1];
       contentHtml = `
-        <div class="rounded-2xl border-2 border-amber-400 bg-gradient-to-br from-amber-500/20 to-slate-900 p-4 min-w-[200px] shadow-[0_0_20px_rgba(245,158,11,0.3)]">
+        <div class="message-content rounded-2xl border-2 border-amber-400 bg-gradient-to-br from-amber-500/20 to-slate-900 p-4 min-w-[200px] shadow-[0_0_20px_rgba(245,158,11,0.3)]">
             <div class="text-center">
                 <span class="text-4xl drop-shadow-[0_0_10px_rgba(245,158,11,0.8)]">🎁</span>
                 <div class="text-amber-400 font-black text-2xl mt-1">${amount} PC</div>
@@ -437,19 +458,19 @@ function addMessageToUI(m) {
       `;
   }
   else if (m.content && (m.content.includes("Missed audio call") || m.content.includes("Missed video call"))) {
-    contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
+    contentHtml = `<div class="message-content text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
   } 
   else if (m.content) {
-    contentHtml = `<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>`;
+    contentHtml = `<div class="message-content max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>`;
   }
 
   let mediaHtml = "";
-  if (m.media_url && !m.media_url.startsWith("challenge:") && !m.media_url.startsWith("gift:")) {
+  if (!m.is_deleted && m.media_url && !m.media_url.startsWith("challenge:") && !m.media_url.startsWith("gift:")) {
     const safeUrl = escapeHTML(m.media_url);
     if (m.media_url.match(/\.(mp4|webm|ogg|mov|mp3|wav|m4a)$/i)) {
-      mediaHtml = `<audio src="${safeUrl}" controls class="mt-2 w-48"></audio>`;
+      mediaHtml = `<audio src="${safeUrl}" controls class="message-media mt-2 w-48"></audio>`;
     } else {
-      mediaHtml = `<img src="${safeUrl}" class="max-w-[200px] rounded-xl mt-1 border border-slate-700" />`;
+      mediaHtml = `<img src="${safeUrl}" class="message-media max-w-[200px] rounded-xl mt-1 border border-slate-700" />`;
     }
   }
 
@@ -459,7 +480,29 @@ function addMessageToUI(m) {
     setTimeout(() => { const s = wrap.querySelector('.msg-status'); if (s) s.classList.add("text-cyan-400"); }, 10);
   }
 
-  wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}`;
+  // 🟢 Add Delete Button if it's my message
+  let deleteBtnHtml = "";
+  if (mine && !m.is_deleted) {
+      deleteBtnHtml = `
+        <button class="delete-btn absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-500 hover:text-red-400 bg-slate-900/80 rounded-full border border-slate-700" title="Delete Message">
+            🗑️
+        </button>
+      `;
+  }
+
+  wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}${deleteBtnHtml}`;
+
+  // Add delete listener
+  if (deleteBtnHtml) {
+      wrap.querySelector(".delete-btn").onclick = (e) => {
+          e.stopPropagation();
+          if (confirm("Are you sure you want to delete this message for everyone?")) {
+              if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+                  dmSocket.send(JSON.stringify({ type: "dm:delete", message_id: m.id }));
+              }
+          }
+      };
+  }
 
   // --- RENDER REACTIONS ---
   if (m.reactions && m.reactions.length > 0) {
@@ -718,7 +761,6 @@ async function showChallengeModal(userId, username) {
       btn.classList.add("opacity-50");
 
       try {
-        // 1. Create a private room
         const room = await api.request("/api/v1/rooms", {
           method: "POST",
           body: { game_slug: gameSlug, max_players: maxPlayers, wager, is_public: false }
@@ -726,7 +768,6 @@ async function showChallengeModal(userId, username) {
         const roomCode = room.code;
         if (!roomCode) throw new Error("No room code returned from server");
 
-        // 2. Send the challenge over the DM socket
         if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) {
           throw new Error("Chat socket not connected — wait a second and try again");
         }
@@ -798,25 +839,11 @@ $("voiceNoteBtn")?.addEventListener("click", async () => {
 // ---------------------------------------------------------
 // 4. WEBRTC CALLING SYSTEM
 // ---------------------------------------------------------
-function addDebugLog(text) {
-    let debugBox = $("webrtcDebugBox");
-    if (!debugBox) {
-        debugBox = document.createElement("div");
-        debugBox.id = "webrtcDebugBox";
-        debugBox.className = "fixed top-2 left-2 z-[9999] bg-black/80 text-white text-[10px] p-2 rounded max-w-xs font-mono pointer-events-none whitespace-pre-wrap";
-        document.body.appendChild(debugBox);
-    }
-    debugBox.textContent += text + "\n";
-}
-
 function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   if ($("videoCallOverlay")) $("videoCallOverlay").remove();
   const overlay = document.createElement("div");
   overlay.id = "videoCallOverlay";
   overlay.className = "fixed inset-0 z-[999] bg-[#0b141a] flex flex-col items-center justify-between";
-
-  // 🟢 THE DEBUG BOX
-  addDebugLog("Overlay created. Waiting for stream...");
 
   const header = `
     <div class="relative z-10 w-full p-6 flex justify-between items-center">
@@ -829,7 +856,6 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     </div>
   `;
 
-  // 🟢 We append the audio element directly to document.body so it never gets destroyed
   let audioEl = document.createElement("audio");
   audioEl.id = "globalRemoteAudio";
   audioEl.autoplay = true;
@@ -869,8 +895,7 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   setTimeout(() => {
       if (remoteStream) {
           audioEl.srcObject = remoteStream;
-          audioEl.play().then(() => addDebugLog("Audio playing successfully")).catch(e => {
-              addDebugLog("Autoplay blocked! User must click.");
+          audioEl.play().catch(e => {
               const prompt = document.createElement("div");
               prompt.className = "absolute inset-0 z-[9999] bg-black/80 flex items-center justify-center text-white font-bold text-lg cursor-pointer";
               prompt.textContent = "🔊 TAP TO UNMUTE";
@@ -949,15 +974,9 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
 
     pc = new RTCPeerConnection(ICE_SERVERS);
     
-    // 🟢 CONNECTION STATE LOGGER
-    pc.oniceconnectionstatechange = () => {
-        addDebugLog("ICE State: " + pc.iceConnectionState);
-    };
-
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     pc.ontrack = (event) => {
-      addDebugLog("Track received: " + event.track.kind);
       if (!remoteStream) remoteStream = new MediaStream();
       remoteStream.addTrack(event.track);
       if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
@@ -1054,15 +1073,9 @@ function showIncomingCall(senderId, offer, isVideo) {
 
       pc = new RTCPeerConnection(ICE_SERVERS);
       
-      // 🟢 CONNECTION STATE LOGGER
-      pc.oniceconnectionstatechange = () => {
-          addDebugLog("ICE State: " + pc.iceConnectionState);
-      };
-
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
       pc.ontrack = (event) => {
-        addDebugLog("Track received: " + event.track.kind);
         if (!remoteStream) remoteStream = new MediaStream();
         remoteStream.addTrack(event.track);
         if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
@@ -1136,7 +1149,6 @@ function endCall() {
   const overlay = $("videoCallOverlay");
   if (overlay) overlay.remove();
   
-  // 🟢 Cleanup global audio element
   const audioEl = $("globalRemoteAudio");
   if (audioEl) audioEl.remove();
   
