@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 
+from app.models.social import ChatGroupMember, DirectMessage, Notification, MessageReaction
+
 import jwt
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import func
