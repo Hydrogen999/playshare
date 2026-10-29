@@ -204,14 +204,22 @@ function timeAgo(iso) {
 }
 function escapeHTML(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
-// 🟢 NEW: Premium Badge & Glow Function
-function premiumMark(isPremium, frameColor) {
+// 🟢 NEW: The Ultimate Royal Crown SVG
+function premiumMark(isPremium) {
     if (!isPremium) return "";
-    
-    // Create a glowing PRO badge
-    let badge = `<span class="bg-gradient-to-r from-amber-300 to-amber-500 text-slate-900 text-[8px] font-black px-1.5 py-0.5 rounded-sm uppercase tracking-wider ml-1 shadow-[0_0_8px_rgba(245,158,11,0.8)]">PRO</span>`;
-    
-    return badge;
+    return `
+        <span class="inline-flex items-center justify-center ml-1" title="Premium User">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 text-amber-400 drop-shadow-[0_0_5px_rgba(245,158,11,0.9)] animate-pulse">
+                <path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z" clip-rule="evenodd" />
+            </svg>
+        </span>
+    `;
+}
+
+// 🟢 NEW: Golden Text Gradient for Premium Users
+function renderName(name, isPremium) {
+    if (!isPremium) return escapeHTML(name);
+    return `<span class="bg-clip-text text-transparent bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-200 font-extrabold drop-shadow-sm">${escapeHTML(name)}</span>`;
 }
 
 function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSeen) {
@@ -222,7 +230,6 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
         statusHtml = `<span class="text-slate-500 text-[10px]">Last seen ${timeAgo(lastSeen)}</span>`;
     }
     
-    // 🟢 Add Glow to the avatar if premium
     const glowClass = isPremium ? "shadow-[0_0_15px_rgba(245,158,11,0.6)] rounded-full" : "";
 
     $("chatHeaderContent").innerHTML = `
@@ -230,7 +237,7 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
         <div class="flex items-center gap-3">
           <div class="${glowClass}">${avatarHTML(avatarId, "sm", null, isPremium)}</div>
           <div>
-            <div class="text-sm font-bold text-slate-100 flex items-center">${escapeHTML(username)}${premiumMark(isPremium)}</div>
+            <div class="text-sm font-bold text-slate-100 flex items-center">${renderName(username, isPremium)}${premiumMark(isPremium)}</div>
             <div id="typingIndicator" class="hidden"></div>
             ${statusHtml}
           </div>
@@ -339,7 +346,7 @@ function renderList() {
       return `
         <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 transition-all hover:pl-5">
           <div class="flex-shrink-0 ${glowClass}">${avatarHTML(u.avatar_id, "sm", u.frame_color, u.is_premium)}</div>
-          <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate flex items-center">${escapeHTML(u.username)}${premiumMark(u.is_premium)}</div><div class="text-xs text-slate-500">Level ${u.level}</div></div>
+          <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate flex items-center">${renderName(u.username, u.is_premium)}${premiumMark(u.is_premium)}</div><div class="text-xs text-slate-500">Level ${u.level}</div></div>
           ${action}
         </div>`;
     }).join("");
@@ -359,7 +366,7 @@ function renderList() {
             ${onlineDot}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-semibold truncate flex items-center">${escapeHTML(f.username)}${premiumMark(f.is_premium)} ${f.streak_count > 0 ? `<span class="text-orange-500 font-bold text-[10px] ml-1">🔥 ${f.streak_count}</span>` : ""}</div>
+          <div class="text-sm font-semibold truncate flex items-center">${renderName(f.username, f.is_premium)}${premiumMark(f.is_premium)} ${f.streak_count > 0 ? `<span class="text-orange-500 font-bold text-[10px] ml-1">🔥 ${f.streak_count}</span>` : ""}</div>
           <div class="text-xs text-slate-500">Level ${f.level}</div>
         </div>
         <button data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 group-hover:bg-brand-600 group-hover:border-brand-500 group-hover:shadow-[0_0_10px_rgba(109,40,217,0.5)] text-white font-bold transition">Chat</button>
@@ -388,7 +395,7 @@ function renderList() {
       return `
       <div class="flex items-center gap-3 px-4 py-3 border-b border-slate-800/50">
         <div class="flex-shrink-0 ${glowClass}">${avatarHTML(r.avatar_id, "sm", r.frame_color, r.is_premium)}</div>
-        <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate flex items-center">${escapeHTML(r.username)}${premiumMark(r.is_premium)}</div><div class="text-xs text-slate-500">Level ${r.level}</div></div>
+        <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate flex items-center">${renderName(r.username, r.is_premium)}${premiumMark(r.is_premium)}</div><div class="text-xs text-slate-500">Level ${r.level}</div></div>
         <div class="flex gap-1">
           <button data-act="accept" data-id="${r.user_id}" class="text-xs px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700">✓</button>
           <button data-act="decline" data-id="${r.user_id}" class="text-xs px-2.5 py-1.5 rounded bg-slate-700 hover:bg-slate-600">✕</button>
@@ -406,7 +413,7 @@ function renderList() {
         <div class="flex-shrink-0 ${glowClass}">${avatarHTML(c.avatar_id, "sm", c.frame_color, c.is_premium)}</div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between">
-            <div class="text-sm font-semibold truncate flex items-center">${escapeHTML(c.username)}${premiumMark(c.is_premium)} ${c.streak > 0 ? `<span class="text-orange-500 font-bold text-[10px] ml-1">🔥 ${c.streak}</span>` : ""}</div>
+            <div class="text-sm font-semibold truncate flex items-center">${renderName(c.username, c.is_premium)}${premiumMark(c.is_premium)} ${c.streak > 0 ? `<span class="text-orange-500 font-bold text-[10px] ml-1">🔥 ${c.streak}</span>` : ""}</div>
             <div class="text-[10px] text-slate-500">${timeAgo(c.last_at)}</div>
           </div>
           <div class="flex items-center justify-between mt-0.5">
@@ -516,7 +523,6 @@ function addMessageToUI(m, highlightQuery = null) {
   
   const mine = m.sender_id === myId;
   
-  // 🟢 Premium Message Glow
   const senderFriend = friends.find(f => String(f.id) === String(m.sender_id));
   const isPremiumSender = senderFriend ? senderFriend.is_premium : false;
   const premiumBubbleClass = (isPremiumSender && !mine) ? "shadow-[0_0_15px_rgba(245,158,11,0.2)] border border-amber-500/30" : "";
@@ -527,8 +533,8 @@ function addMessageToUI(m, highlightQuery = null) {
 
   let senderHtml = "";
   if (m.group_id && !mine) {
-    const name = m.sender_username || friends.find(f => String(f.id) === String(m.sender_id))?.username || "Member";
-    senderHtml = `<div class="text-[10px] text-cyber-cyan font-bold mb-0.5 px-1">${escapeHTML(name)}</div>`;
+    const name = m.sender_username || senderFriend?.username || "Member";
+    senderHtml = `<div class="text-[10px] font-bold mb-0.5 px-1 flex items-center">${renderName(name, isPremiumSender)}${premiumMark(isPremiumSender)}</div>`;
   }
 
   let replyHtml = m.reply_to_status_id ? `<div class="text-[10px] text-brand-400 mb-1 px-2 border-l-2 border-brand-500">Replied to a status</div>` : "";
@@ -981,7 +987,7 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     <div class="relative z-10 w-full p-6 flex justify-between items-center">
       <button class="opacity-0 w-12 h-12"></button>
       <div class="text-center">
-        <div class="text-white font-bold text-2xl flex items-center justify-center gap-2">${escapeHTML(targetName)} ${isPremium ? "👑" : ""}</div>
+        <div class="text-white font-bold text-2xl flex items-center justify-center gap-2">${renderName(targetName, isPremium)} ${premiumMark(isPremium)}</div>
         <div id="callTimer" class="text-slate-400 text-sm mt-1">Connecting...</div>
       </div>
       <button class="opacity-0 w-12 h-12"></button>
@@ -1168,7 +1174,7 @@ function showIncomingCall(senderId, offer, isVideo) {
     <div class="text-center mt-12 w-full">
       <div class="text-slate-400 text-sm mb-2">Incoming ${isVideo ? 'Video' : 'Audio'} Call...</div>
       <div class="w-40 h-40 mx-auto rounded-full border-4 border-slate-700 overflow-hidden shadow-2xl animate-pulse">${avatarHTML(caller.avatar_id, "xl", null, caller.is_premium)}</div>
-      <div class="text-white font-bold text-3xl mt-6">${escapeHTML(caller.username)}</div>
+      <div class="text-white font-bold text-3xl mt-6">${renderName(caller.username, caller.is_premium)} ${premiumMark(caller.is_premium)}</div>
     </div>
     <div class="w-full max-w-sm flex justify-between mb-12">
       <div class="flex flex-col items-center gap-2">
