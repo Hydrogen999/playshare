@@ -65,3 +65,14 @@ class Profile(Base):
     chat_retention_days: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     user: Mapped[User] = relationship("User", back_populates="profile")
+# In backend/app/models/user.py
+# Add this to your existing User class:
+
+from datetime import datetime
+from sqlalchemy import DateTime # make sure this is imported at the top
+
+class User(Base):
+    # ... your existing columns ...
+    
+    # 🟢 NEW: Track when the user was last online
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
