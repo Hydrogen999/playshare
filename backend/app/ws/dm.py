@@ -6,17 +6,16 @@ import jwt
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import func
 
-from app.models.token import TokenAccount, LedgerTransaction, LedgerEntry
-from app.models.user import Profile
-
 from app.database import SessionLocal
 from app.models.social import ChatGroupMember, DirectMessage, Notification
+from app.models.token import TokenAccount, LedgerTransaction, LedgerEntry # <-- NEW
+from app.models.user import User, Profile # <-- NEW
 from app.security import decode_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-MAX_FRAME_CHARS = 64 * 1024   # reject absurdly large frames
+MAX_FRAME_CHARS = 64 * 1024
 MAX_CONTENT_LEN = 1000
 MAX_URL_LEN = 2048
 
@@ -27,9 +26,6 @@ CALL_FIELDS = (
 )
 
 
-# --------------------------------------------------------------------------- #
-# Connection hub
-# --------------------------------------------------------------------------- #
 class DMHub:
     def __init__(self):
         self.active_connections: dict[str, set[WebSocket]] = {}
@@ -69,9 +65,6 @@ class DMHub:
 dm_hub = DMHub()
 
 
-# --------------------------------------------------------------------------- #
-# Sync DB helpers
-# --------------------------------------------------------------------------- #
 def _dm_payload(mm: DirectMessage) -> dict:
     return {
         "type": "dm:new",
@@ -101,13 +94,11 @@ def _save_dm(sender_id, target_id, content, media_url, reply_to_id) -> dict:
             Notification(
                 user_id=target_id,
                 type="dm",
-                payload=json.dumps(
-                    {
-                        "from_id": sender_id,
-                        "message_id": mm.id,
-                        "preview": content[:60] if content else "📷 Media",
-                    }
-                ),
+                payload=json.dumps({
+                    "from_id": sender_id,
+                    "message_id": mm.id,
+                    "preview": content[:60] if content else "📷 Media",
+                }),
             )
         )
         db.commit()
@@ -117,11 +108,7 @@ def _save_dm(sender_id, target_id, content, media_url, reply_to_id) -> dict:
 
 def _save_group_message(sender_id, group_id, content, media_url):
     with SessionLocal() as db:
-        members = (
-            db.query(ChatGroupMember.user_id)
-            .filter(ChatGroupMember.group_id == group_id)
-            .all()
-        )
+        members = db.query(ChatGroupMember.user_id).filter(ChatGroupMember.group_id == group_id).all()
         member_ids = [m[0] for m in members]
         if str(sender_id) not in {str(m) for m in member_ids}:
             return None, []
@@ -170,11 +157,9 @@ def _save_missed_call(caller_id, callee_id, call_type) -> dict:
         db.refresh(mm)
         return _dm_payload(mm)
 
-# --- NEW: Save Challenge to Database ---
+
 def _save_challenge(sender_id, target_id, content, game_slug, room_code) -> dict:
     with SessionLocal() as db:
-        # We store the game details inside the media_url field
-        # Format: challenge:{game_slug}:{room_code}
         mm = DirectMessage(
             sender_id=sender_id,
             recipient_id=target_id,
@@ -187,19 +172,7 @@ def _save_challenge(sender_id, target_id, content, game_slug, room_code) -> dict
         return _dm_payload(mm)
 
 
-# --------------------------------------------------------------------------- #
-# Small validators
-# --------------------------------------------------------------------------- #
-def _clean_text(value) -> str:
-    return value.strip()[:MAX_CONTENT_LEN] if isinstance(value, str) else ""
-
-
-def _clean_url(value):
-    if isinstance(value, str) and 0 < len(value) <= MAX_URL_LEN:
-        return value
-    return None
-
-# --- NEW: Save Gift and Transfer Coins ---
+# --- NEW: Save Gift, Transfer Coins, and Create Notification ---
 def _save_gift_and_transfer(sender_id, target_id, amount) -> dict:
     with SessionLocal() as db:
         try:
@@ -233,48 +206,46 @@ def _save_gift_and_transfer(sender_id, target_id, amount) -> dict:
                 sender_id=sender_id,
                 recipient_id=target_id,
                 content=f"Sent a gift of {amount} PlayCoins",
-                media_url=f"gift:{amount}" # We encode the gift here!
+                media_url=f"gift:{amount}"
             )
             db.add(mm)
+
+            # 6. Create Notification for Receiver
+            db.add(Notification(
+                user_id=target_id,
+                type="gift",
+                payload=json.dumps({
+                    "from_id": sender_id,
+                    "amount": amount,
+                    "message": f"{sender_id} gifted you {amount} PlayCoins!"
+                })
+            ))
+            
             db.commit()
             db.refresh(mm)
 
             return {
                 "ok": True,
                 "message": _dm_payload(mm),
-                "new_sender_balance": sender_acc.balance
+                "new_sender_balance": sender_acc.balance,
+                "new_target_balance": target_acc.balance
             }
         except Exception as e:
             db.rollback()
             logger.exception("Gift transfer failed")
             return {"ok": False, "error": "Transaction failed"}
 
-async def handle_gift(user_id, msg):
-    target_id = msg.get("target_id")
-    try:
-        amount = int(msg.get("amount", 0))
-    except (TypeError, ValueError):
-        return
 
-    if not target_id or amount <= 0:
-        return
-
-    res = await asyncio.to_thread(_save_gift_and_transfer, user_id, target_id, amount)
-    
-    if res.get("ok"):
-        out_msg = res["message"]
-        # Send to both
-        await dm_hub.send_to_users([target_id, user_id], out_msg)
-        
-        # Send a balance update ping to the sender so their dashboard updates
-        await dm_hub.send_to_user(user_id, {"type": "balance:update", "new_balance": res["new_sender_balance"]})
-    else:
-        await dm_hub.send_to_user(user_id, {"type": "dm:error", "error": res.get("error", "Gift failed")})
+def _clean_text(value) -> str:
+    return value.strip()[:MAX_CONTENT_LEN] if isinstance(value, str) else ""
 
 
-# --------------------------------------------------------------------------- #
-# Message handlers
-# --------------------------------------------------------------------------- #
+def _clean_url(value):
+    if isinstance(value, str) and 0 < len(value) <= MAX_URL_LEN:
+        return value
+    return None
+
+
 async def handle_typing(user_id, msg):
     target_id = msg.get("target_id")
     if not target_id:
@@ -359,7 +330,7 @@ async def handle_call(user_id, msg):
     relay["sender_id"] = user_id
     await dm_hub.send_to_user(target_id, relay)
 
-# --- NEW: Handle Game Challenge ---
+
 async def handle_challenge(user_id, msg):
     target_id = msg.get("target_id")
     content = _clean_text(msg.get("content"))
@@ -377,8 +348,30 @@ async def handle_challenge(user_id, msg):
         logger.exception("DB error in dm:challenge")
         return
 
-    # Send to both sender (for multi-tab sync) and recipient
     await dm_hub.send_to_users([target_id, user_id], out_msg)
+
+
+async def handle_gift(user_id, msg):
+    target_id = msg.get("target_id")
+    try:
+        amount = int(msg.get("amount", 0))
+    except (TypeError, ValueError):
+        return
+
+    if not target_id or amount <= 0:
+        return
+
+    res = await asyncio.to_thread(_save_gift_and_transfer, user_id, target_id, amount)
+    
+    if res.get("ok"):
+        out_msg = res["message"]
+        await dm_hub.send_to_users([target_id, user_id], out_msg)
+        
+        # Send balance updates to BOTH users so their UI updates instantly
+        await dm_hub.send_to_user(user_id, {"type": "balance:update", "new_balance": res["new_sender_balance"]})
+        await dm_hub.send_to_user(target_id, {"type": "balance:update", "new_balance": res["new_target_balance"]})
+    else:
+        await dm_hub.send_to_user(user_id, {"type": "dm:error", "error": res.get("error", "Gift failed")})
 
 
 HANDLERS = {
@@ -386,14 +379,12 @@ HANDLERS = {
     "group:send": handle_group_send,
     "dm:send": handle_dm_send,
     "dm:seen": handle_dm_seen,
-    "dm:challenge": handle_challenge, # <-- REGISTERED HERE
+    "dm:challenge": handle_challenge,
+    "dm:gift": handle_gift,
     **{event: handle_call for event in CALL_EVENTS},
 }
 
 
-# --------------------------------------------------------------------------- #
-# WebSocket endpoint
-# --------------------------------------------------------------------------- #
 @router.websocket("/ws/dm")
 async def dm_websocket(ws: WebSocket, token: str = Query(...)):
     try:
