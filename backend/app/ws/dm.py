@@ -33,7 +33,15 @@ class DMHub:
 
     async def connect(self, user_id: str, ws: WebSocket):
         await ws.accept()
+        is_new = str(user_id) not in self.active_connections
         self.active_connections.setdefault(str(user_id), set()).add(ws)
+        
+        # 🟢 Update last_seen to now when they connect
+        await asyncio.to_thread(self._update_last_seen, user_id, datetime.now(timezone.utc))
+        
+        # If this is their first connection, broadcast to their friends that they are online
+        if is_new:
+            await self._broadcast_presence(user_id, "online", None)
 
     def disconnect(self, user_id: str, ws: WebSocket):
         user_id = str(user_id)
@@ -43,6 +51,27 @@ class DMHub:
         conns.discard(ws)
         if not conns:
             del self.active_connections[user_id]
+            # 🟢 Broadcast offline status when they fully disconnect
+            now = datetime.now(timezone.utc)
+            asyncio.create_task(self._broadcast_presence(user_id, "offline", now))
+            asyncio.create_task(asyncio.to_thread(self._update_last_seen, user_id, now))
+
+    def _update_last_seen(self, user_id, dt):
+        with SessionLocal() as db:
+            user = db.get(User, user_id)
+            if user:
+                user.last_seen = dt
+                db.commit()
+
+    async def _broadcast_presence(self, user_id, status, last_seen):
+        payload = {
+            "type": "presence:update",
+            "user_id": str(user_id),
+            "status": status,
+            "last_seen": last_seen.isoformat() if last_seen else None
+        }
+        # Send to all connected users
+        await asyncio.gather(*(self.send_to_user(uid, payload) for uid in list(self.active_connections.keys())))
 
     async def send_to_user(self, user_id, message: dict):
         user_id = str(user_id)
@@ -398,7 +427,6 @@ async def handle_react(user_id, msg):
     if res:
         await dm_hub.send_to_users([res["sender_id"], res["recipient_id"]], res)
 
-# 🟢 NEW: HANDLER FOR DELETING MESSAGES
 def _delete_dm(msg_id, user_id) -> dict:
     with SessionLocal() as db:
         mm = db.query(DirectMessage).filter(DirectMessage.id == msg_id).first()
@@ -443,7 +471,7 @@ HANDLERS = {
     "dm:challenge": handle_challenge,
     "dm:gift": handle_gift,
     "dm:react": handle_react,
-    "dm:delete": handle_delete, # 🟢 ADDED THIS
+    "dm:delete": handle_delete,
     **{event: handle_call for event in CALL_EVENTS},
 }
 
