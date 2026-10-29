@@ -227,11 +227,64 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
           </div>
         </div>
         <div class="flex items-center gap-1">
+          <button id="searchChatBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Search Messages">🔍</button>
           <button id="startAudioCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Audio Call">📞</button>
           <button id="startVideoCallBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Video Call">📹</button>
           <button id="inviteGameBtn" class="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition" title="Challenge">⚔️</button>
         </div>
       </div>`;
+
+    // 🟢 Attach Search listener
+    if ($("searchChatBtn")) {
+        $("searchChatBtn").onclick = toggleSearchUI;
+    }
+}
+
+// 🟢 New function to toggle the Search Bar
+function toggleSearchUI() {
+    let searchBar = $("chatSearchBar");
+    if (searchBar) {
+        searchBar.remove();
+        loadMessages(); // Reset chat to normal
+        return;
+    }
+
+    searchBar = document.createElement("div");
+    searchBar.id = "chatSearchBar";
+    searchBar.className = "px-4 py-2 border-b border-brand-500/20 bg-slate-900/90 flex items-center gap-2 z-20";
+    searchBar.innerHTML = `
+        <input type="text" id="chatSearchInput" placeholder="Search in conversation..." class="flex-1 bg-slate-800 text-white rounded-lg px-3 py-1.5 text-sm focus:outline-none border border-slate-700 focus:border-cyber-cyan" />
+        <button id="closeSearchBtn" class="text-slate-400 hover:text-white font-bold px-2">✕</button>
+    `;
+    
+    // Insert after header
+    const header = $("chatHeader");
+    header.after(searchBar);
+    $("chatSearchInput").focus();
+
+    $("closeSearchBtn").onclick = toggleSearchUI;
+
+    $("chatSearchInput").addEventListener("input", async (e) => {
+        const query = e.target.value.trim().toLowerCase();
+        if (!query) {
+            loadMessages();
+            return;
+        }
+        
+        // Filter messages in real-time
+        const msgs = await api.getConversation(activeChatUserId);
+        const filtered = msgs.filter(m => m.content && m.content.toLowerCase().includes(query));
+        
+        const el = $("chatMessages");
+        el.innerHTML = "";
+        if (filtered.length === 0) {
+            el.innerHTML = `<div class="text-center text-slate-500 text-sm mt-10">No messages found for "${escapeHTML(query)}"</div>`;
+            return;
+        }
+        
+        for (const m of filtered) addMessageToUI(m, query);
+        el.scrollTop = el.scrollHeight;
+    });
 }
 
 function openChatPanel() { document.body.classList.add("chat-open"); }
@@ -239,6 +292,7 @@ function closeChatPanel() {
   document.body.classList.remove("chat-open");
   activeChatUserId = null;
   activeGroupId = null;
+  $("chatSearchBar")?.remove(); // Clean up search bar
   $("chatMessages").innerHTML = "";
   $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400">Select a conversation</div>`;
   $("chatForm")?.classList.add("hidden");
@@ -442,7 +496,8 @@ async function loadMessages() {
   } catch (err) { console.error(err); }
 }
 
-function addMessageToUI(m) {
+// 🟢 Added optional `highlightQuery` parameter for search
+function addMessageToUI(m, highlightQuery = null) {
   const el = $("chatMessages");
   if (!el) return;
   
@@ -494,7 +549,14 @@ function addMessageToUI(m) {
     contentHtml = `<div class="message-content text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
   } 
   else if (m.content) {
-    contentHtml = `<div class="message-content max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>`;
+    // 🟢 HIGHLIGHT LOGIC
+    let renderedContent = escapeHTML(m.content);
+    if (highlightQuery) {
+        const regex = new RegExp(`(${highlightQuery})`, "gi");
+        renderedContent = renderedContent.replace(regex, `<mark class="bg-amber-400 text-black rounded px-0.5">$1</mark>`);
+    }
+
+    contentHtml = `<div class="message-content max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${renderedContent}</div>`;
   }
 
   let mediaHtml = "";
