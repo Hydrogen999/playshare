@@ -4,63 +4,19 @@ import { avatarHTML } from "./avatars.js";
 // 🟢 INJECTING THE INSANE ANIMATED BACKGROUND CSS
 const style = document.createElement('style');
 style.textContent = `
-  @keyframes move-stars {
-      0% { background-position: 0 0; }
-      100% { background-position: 500px 500px; }
-  }
-  @keyframes glow-pulse {
-      0% { box-shadow: 0 0 10px rgba(245,158,11,0.4); }
-      50% { box-shadow: 0 0 25px rgba(245,158,11,0.9), 0 0 10px rgba(245,158,11,0.5) inset; }
-      100% { box-shadow: 0 0 10px rgba(245,158,11,0.4); }
-  }
-  @keyframes float-btn {
-      0% { transform: translateY(0px); }
-      50% { transform: translateY(-3px); }
-      100% { transform: translateY(0px); }
-  }
+  @keyframes move-stars { 0% { background-position: 0 0; } 100% { background-position: 500px 500px; } }
   .premium-header {
       background-color: #03001C !important;
-      background-image: 
-          radial-gradient(1.5px 1.5px at 20px 30px, #fff, rgba(0,0,0,0)),
-          radial-gradient(1.5px 1.5px at 40px 70px, #F59E0B, rgba(0,0,0,0)),
-          radial-gradient(1.5px 1.5px at 50px 160px, #fff, rgba(0,0,0,0)),
-          radial-gradient(1.5px 1.5px at 90px 40px, #06b6d4, rgba(0,0,0,0)),
-          radial-gradient(1.5px 1.5px at 130px 80px, #fff, rgba(0,0,0,0)),
-          radial-gradient(1.5px 1.5px at 160px 120px, #F59E0B, rgba(0,0,0,0)) !important;
-      background-repeat: repeat !important;
-      background-size: 200px 200px !important;
+      background-image: radial-gradient(1.5px 1.5px at 20px 30px, #fff, rgba(0,0,0,0)), radial-gradient(1.5px 1.5px at 40px 70px, #F59E0B, rgba(0,0,0,0)), radial-gradient(1.5px 1.5px at 50px 160px, #fff, rgba(0,0,0,0)), radial-gradient(1.5px 1.5px at 90px 40px, #06b6d4, rgba(0,0,0,0)), radial-gradient(1.5px 1.5px at 130px 80px, #fff, rgba(0,0,0,0)), radial-gradient(1.5px 1.5px at 160px 120px, #F59E0B, rgba(0,0,0,0)) !important;
+      background-repeat: repeat !important; background-size: 200px 200px !important;
       animation: move-stars 40s linear infinite !important;
-      border-bottom: 2px solid rgba(245, 158, 11, 0.3) !important;
-      position: relative;
+      border-bottom: 2px solid rgba(245, 158, 11, 0.3) !important; position: relative;
   }
-  .premium-header::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, rgba(3,0,28,0) 0%, rgba(245,158,11,0.1) 50%, rgba(3,0,28,0) 100%);
-      pointer-events: none;
-  }
-  .action-btn {
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 12px;
-      transition: all 0.3s ease;
-      display: flex; align-items: center; justify-content: center;
-  }
-  .action-btn:hover {
-      background: rgba(255, 255, 255, 0.15);
-      border-color: rgba(255, 255, 255, 0.3);
-      transform: translateY(-2px);
-      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-  }
-  .premium-action-btn {
-      border-color: rgba(245, 158, 11, 0.4);
-      background: rgba(245, 158, 11, 0.1);
-  }
-  .premium-action-btn:hover {
-      box-shadow: 0 0 15px rgba(245, 158, 11, 0.5);
-      border-color: rgba(245, 158, 11, 0.8);
-  }
+  .premium-header::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(3,0,28,0) 0%, rgba(245,158,11,0.1) 50%, rgba(3,0,28,0) 100%); pointer-events: none; }
+  .action-btn { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; }
+  .action-btn:hover { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.3); transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+  .premium-action-btn { border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.1); }
+  .premium-action-btn:hover { box-shadow: 0 0 15px rgba(245, 158, 11, 0.5); border-color: rgba(245, 158, 11, 0.8); }
 `;
 document.head.appendChild(style);
 
@@ -73,29 +29,10 @@ let pollTimer = null;
 let dmSocket = null;
 let reconnectTimeout = null;
 
-// --- WebRTC & Media Variables ---
-let pc = null;
-let localStream = null;
-let remoteStream = null;
-let currentCallTargetId = null;
-let isVideoCall = false;
-let isMuted = false;
-let callTimeout = null;
-let incomingCallModal = null;
+let pc = null, localStream = null, remoteStream = null, currentCallTargetId = null, isVideoCall = false, isMuted = false, callTimeout = null, incomingCallModal = null;
+const ICE_SERVERS = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }, { urls: "stun:stun.cloudflare.com:3478" }] };
 
-const ICE_SERVERS = {
-    iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun.cloudflare.com:3478" } 
-    ]
-};
-
-// --- Voice Note Variables ---
-let mediaRecorder = null;
-let audioChunks = [];
-let isRecording = false;
-let recordingTarget = null;
+let mediaRecorder = null, audioChunks = [], isRecording = false, recordingTarget = null;
 let replyingToMessage = null;
 let typingTimeout = null;
 const EMOJIS = ["❤️", "😂", "🔥", "👍", "😮", "😢"];
@@ -108,9 +45,6 @@ function setActiveTab(tab) {
   document.querySelectorAll(".tab-btn").forEach((b) => { b.className = b.dataset.tab === activeTab ? TAB_ACTIVE : TAB_IDLE; });
 }
 
-// ---------------------------------------------------------
-// 1. WEBSOCKET CONNECTION
-// ---------------------------------------------------------
 function connectDMSocket() {
   if (reconnectTimeout) clearTimeout(reconnectTimeout);
   const token = api.getToken();
@@ -135,9 +69,7 @@ function connectDMSocket() {
             friend.is_online = (msg.status === "online");
             friend.last_seen = msg.last_seen;
             renderList();
-            if (String(activeChatUserId) === String(msg.user_id)) {
-                updateChatHeaderStatus(friend.username, friend.avatar_id, friend.is_premium, friend.is_online, friend.last_seen);
-            }
+            if (String(activeChatUserId) === String(msg.user_id)) updateChatHeaderStatus(friend.username, friend.avatar_id, friend.is_premium, friend.is_online, friend.last_seen);
         }
         return;
     }
@@ -160,9 +92,7 @@ function connectDMSocket() {
       }
     }
     else if (msg.type === "dm:seen") {
-      if (activeChatUserId === msg.reader_id) {
-        document.querySelectorAll(".msg-status.mine").forEach(el => { el.textContent = "✓✓"; el.classList.add("text-cyan-400"); });
-      }
+      if (activeChatUserId === msg.reader_id) document.querySelectorAll(".msg-status.mine").forEach(el => { el.textContent = "✓✓"; el.classList.add("text-cyan-400"); });
     }
     else if (msg.type === "dm:error") { alert(msg.error); }
     else if (msg.type === "balance:update") {
@@ -205,9 +135,7 @@ function connectDMSocket() {
         const msgWrap = document.querySelector(`[data-msg-id="${msg.message_id}"]`);
         if (msgWrap) {
             const contentContainer = msgWrap.querySelector(".message-content");
-            if (contentContainer) {
-                contentContainer.innerHTML = `<div class="text-sm italic text-slate-400 border border-slate-700/50 bg-slate-800/30 rounded-2xl px-3 py-2"><span class="mr-1">🚫</span> This message was deleted</div>`;
-            }
+            if (contentContainer) contentContainer.innerHTML = `<div class="text-sm italic text-slate-400 border border-slate-700/50 bg-slate-800/30 rounded-2xl px-3 py-2"><span class="mr-1">🚫</span> This message was deleted</div>`;
             msgWrap.querySelector(".message-media")?.remove();
             msgWrap.querySelector(".reaction-bar")?.remove();
             msgWrap.querySelector(".delete-btn")?.remove();
@@ -218,7 +146,7 @@ function connectDMSocket() {
       if (pc) { clearTimeout(callTimeout); pc.setRemoteDescription(new RTCSessionDescription(msg.answer)).catch(e => console.error(e)); }
     }
     else if (msg.type === "call:ice-candidate") { 
-        if (pc && msg.candidate) { pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(e => console.error(e)); }
+        if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(e => console.error(e));
     }
     else if (msg.type === "call:end") endCall();
     else if (msg.type === "call:reject") { if (currentCallTargetId) alert("Call was declined."); endCall(); }
@@ -230,9 +158,6 @@ function connectDMSocket() {
   });
 }
 
-// ---------------------------------------------------------
-// 2. UI RENDERING
-// ---------------------------------------------------------
 function timeAgo(iso) {
   if (!iso) return "";
   const diff = Math.max(0, Date.now() - new Date(iso).getTime()) / 1000;
@@ -244,8 +169,10 @@ function timeAgo(iso) {
 function escapeHTML(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function premiumMark(isPremium) { return isPremium ? '<span class="text-amber-400 text-xs ml-1 drop-shadow-[0_0_5px_rgba(245,158,11,0.8)]">👑</span>' : ""; }
 
-// 🟢 THE INSANE PREMIUM HEADER
 function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSeen) {
+    const headerContainer = $("chatHeader");
+    if (!headerContainer) return; // SAFETY CHECK
+
     let statusHtml = "";
     if (isOnline) {
         statusHtml = `<span class="text-emerald-400 font-bold text-[11px] flex items-center gap-1 mt-0.5"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span> Online</span>`;
@@ -253,7 +180,6 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
         statusHtml = `<span class="text-slate-400 text-[11px] mt-0.5">Last seen ${timeAgo(lastSeen)}</span>`;
     }
     
-    const headerContainer = $("chatHeader");
     const isPremiumHeader = isPremium ? "premium-header" : "bg-slate-900/90 backdrop-blur-md border-b border-slate-800";
     headerContainer.className = `px-4 py-3 flex items-center gap-3 z-10 transition-all duration-500 ${isPremiumHeader}`;
 
@@ -264,9 +190,9 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
 
     $("chatHeaderContent").innerHTML = `
       <div class="flex items-center justify-between w-full relative z-10">
-        <div class="flex items-center gap-4">
-          <!-- Back button for mobile -->
-          <button id="mobileBack" class="md:hidden text-slate-300 hover:text-white transition">
+        <div class="flex items-center gap-3">
+          
+          <button id="chatBackBtn" class="md:hidden text-slate-300 hover:text-white transition">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
           </button>
           
@@ -287,26 +213,13 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
         </div>
       </div>`;
 
+    $("chatBackBtn")?.addEventListener("click", closeChatPanel);
     if ($("searchChatBtn")) $("searchChatBtn").onclick = toggleSearchUI;
-    
-    // Re-attach mobile back button listener since we recreated it
-    $("mobileBack")?.addEventListener("click", () => {
-        $("chatSearchBar")?.remove(); 
-        $("chatMessages").innerHTML = "";
-        $("chatForm")?.classList.add("hidden");
-        updateChatHeaderStatus("", "default", false, false, null);
-        $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400">Select a conversation</div>`;
-        renderList();
-    });
 }
 
 function toggleSearchUI() {
     let searchBar = $("chatSearchBar");
-    if (searchBar) {
-        searchBar.remove();
-        loadMessages(); 
-        return;
-    }
+    if (searchBar) { searchBar.remove(); loadMessages(); return; }
 
     searchBar = document.createElement("div");
     searchBar.id = "chatSearchBar";
@@ -317,26 +230,22 @@ function toggleSearchUI() {
     `;
     
     const header = $("chatHeader");
-    header.style.position = "relative";
-    header.appendChild(searchBar);
+    if (header) {
+        header.style.position = "relative";
+        header.appendChild(searchBar);
+    }
+    
     $("chatSearchInput").focus();
 
     $("closeSearchBtn").onclick = toggleSearchUI;
-
     $("chatSearchInput").addEventListener("input", async (e) => {
         const query = e.target.value.trim().toLowerCase();
         if (!query) { loadMessages(); return; }
-        
         const msgs = await api.getConversation(activeChatUserId);
         const filtered = msgs.filter(m => m.content && m.content.toLowerCase().includes(query));
-        
         const el = $("chatMessages");
         el.innerHTML = "";
-        if (filtered.length === 0) {
-            el.innerHTML = `<div class="text-center text-slate-500 text-sm mt-10">No messages found for "${escapeHTML(query)}"</div>`;
-            return;
-        }
-        
+        if (filtered.length === 0) { el.innerHTML = `<div class="text-center text-slate-500 text-sm mt-10">No messages found for "${escapeHTML(query)}"</div>`; return; }
         for (const m of filtered) addMessageToUI(m, query);
         el.scrollTop = el.scrollHeight;
     });
@@ -350,17 +259,20 @@ function closeChatPanel() {
   replyingToMessage = null;
   $("chatSearchBar")?.remove(); 
   $("chatMessages").innerHTML = "";
-  $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400">Select a conversation</div>`;
+  
+  const header = $("chatHeader");
+  if (header) {
+      header.className = "px-4 py-3 border-b border-brand-500/20 flex items-center gap-3 bg-slate-900/40 backdrop-blur-md z-10";
+      $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400 font-medium">Select a conversation</div>`;
+  }
+  
   $("chatForm")?.classList.add("hidden");
   removeReplyPreview();
   renderList();
 }
 
 document.querySelectorAll(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    setActiveTab(btn.dataset.tab);
-    renderList();
-  });
+  btn.addEventListener("click", () => { setActiveTab(btn.dataset.tab); renderList(); });
 });
 
 let searchTimeout = null;
@@ -386,7 +298,6 @@ function renderList() {
       else action = `<button data-act="add" data-id="${u.id}" class="text-xs px-2.5 py-1.5 rounded bg-brand-600 hover:bg-brand-700">+ Add</button>`;
       
       const glowClass = u.is_premium ? "shadow-[0_0_10px_rgba(245,158,11,0.5)] rounded-full" : "";
-
       return `
         <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 transition-all hover:pl-5">
           <div class="flex-shrink-0 ${glowClass}">${avatarHTML(u.avatar_id, "sm", u.frame_color, u.is_premium)}</div>
@@ -402,7 +313,6 @@ function renderList() {
     list.innerHTML = friends.map((f) => {
       const onlineDot = f.is_online ? `<span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 border-2 border-slate-900 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>` : "";
       const glowClass = f.is_premium ? "shadow-[0_0_10px_rgba(245,158,11,0.5)] rounded-full" : "";
-      
       return `
       <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 border-b border-slate-800/50 transition-all hover:pl-5 group">
         <div class="relative flex-shrink-0 cursor-pointer ${glowClass}" data-chat="${f.id}" data-username="${escapeHTML(f.username)}" data-avatar="${f.avatar_id}" data-premium="${f.is_premium ? '1' : '0'}">
@@ -501,9 +411,6 @@ function wireGroupRows() {
   });
 }
 
-// ---------------------------------------------------------
-// 3. CHAT ROOM LOGIC
-// ---------------------------------------------------------
 async function openChat(userId, username, avatarId, isPremium) {
   activeChatUserId = userId;
   activeGroupId = null;
@@ -533,12 +440,19 @@ async function openGroupChat(groupId, groupName) {
   activeChatUserId = null;
   openChatPanel();
 
-  $("chatHeader").className = "px-4 py-3 border-b border-brand-500/20 flex items-center gap-3 bg-slate-900/40 backdrop-blur-md z-10";
-  $("chatHeaderContent").innerHTML = `
-    <div class="flex items-center gap-3">
-      <div class="h-10 w-10 rounded-full bg-slate-700 flex items-center justify-center text-lg">👥</div>
-      <div class="text-sm font-bold text-slate-100">${escapeHTML(groupName)}</div>
-    </div>`;
+  const header = $("chatHeader");
+  if (header) {
+      header.className = "px-4 py-3 border-b border-brand-500/20 flex items-center gap-3 bg-slate-900/40 backdrop-blur-md z-10";
+      $("chatHeaderContent").innerHTML = `
+        <div class="flex items-center gap-3 w-full">
+          <button id="chatBackBtn" class="md:hidden text-slate-300 hover:text-white transition mr-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <div class="h-10 w-10 rounded-full bg-slate-700 flex items-center justify-center text-lg">👥</div>
+          <div class="text-sm font-bold text-slate-100">${escapeHTML(groupName)}</div>
+        </div>`;
+      $("chatBackBtn")?.addEventListener("click", closeChatPanel);
+  }
 
   $("chatForm")?.classList.remove("hidden");
 
@@ -581,10 +495,11 @@ function setReply(msg) {
     `;
     
     const chatForm = $("chatForm");
-    chatForm.parentNode.insertBefore(preview, chatForm);
-    
-    $("cancelReplyBtn").onclick = () => { replyingToMessage = null; preview.remove(); };
-    $("chatInput")?.focus();
+    if (chatForm && chatForm.parentNode) {
+        chatForm.parentNode.insertBefore(preview, chatForm);
+        $("cancelReplyBtn").onclick = () => { replyingToMessage = null; preview.remove(); };
+        $("chatInput")?.focus();
+    }
 }
 
 function removeReplyPreview() {
@@ -597,18 +512,13 @@ function addMessageToUI(m, highlightQuery = null) {
   if (!el) return;
   
   const mine = m.sender_id === myId;
-  
   const senderFriend = friends.find(f => String(f.id) === String(m.sender_id));
   const isPremiumSender = senderFriend ? senderFriend.is_premium : false;
   
   let bubbleClass = "";
-  if (mine) {
-      bubbleClass = "bg-gradient-to-br from-brand-600 to-brand-700 text-white rounded-2xl rounded-tr-sm shadow-md";
-  } else if (isPremiumSender) {
-      bubbleClass = "bg-gradient-to-br from-slate-900 to-black border border-amber-500/30 text-amber-50 shadow-[0_0_15px_rgba(245,158,11,0.2)] rounded-2xl rounded-tl-sm";
-  } else {
-      bubbleClass = "bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 text-slate-100 rounded-2xl rounded-tl-sm shadow-sm";
-  }
+  if (mine) bubbleClass = "bg-gradient-to-br from-brand-600 to-brand-700 text-white rounded-2xl rounded-tr-sm shadow-md";
+  else if (isPremiumSender) bubbleClass = "bg-gradient-to-br from-slate-900 to-black border border-amber-500/30 text-amber-50 shadow-[0_0_15px_rgba(245,158,11,0.2)] rounded-2xl rounded-tl-sm";
+  else bubbleClass = "bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 text-slate-100 rounded-2xl rounded-tl-sm shadow-sm";
 
   const wrap = document.createElement("div");
   wrap.className = `relative group flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble w-full`;
@@ -634,7 +544,6 @@ function addMessageToUI(m, highlightQuery = null) {
   }
 
   let contentHtml = "";
-  
   if (m.is_deleted) {
       contentHtml = `<div class="text-sm italic text-slate-400 border border-slate-700/50 bg-slate-800/30 rounded-2xl px-3 py-2"><span class="mr-1">🚫</span> This message was deleted</div>`;
   }
@@ -643,25 +552,16 @@ function addMessageToUI(m, highlightQuery = null) {
       const roomCode = parts[2];
       contentHtml = `
         <div class="rounded-xl border-2 border-cyber-pink bg-slate-900 p-4 min-w-[220px] shadow-[0_0_20px_rgba(236,72,153,0.3)]">
-            <div class="text-center mb-3">
-                <span class="text-3xl">⚔️</span>
-                <div class="text-white font-bold text-sm mt-1">${escapeHTML(m.content)}</div>
-            </div>
+            <div class="text-center mb-3"><span class="text-3xl">⚔️</span><div class="text-white font-bold text-sm mt-1">${escapeHTML(m.content)}</div></div>
             <button onclick="window.location.href='/room?id=${roomCode}'" class="w-full bg-cyber-pink hover:bg-pink-500 text-white font-bold py-2 rounded-lg transition shadow-lg">Join Match</button>
-        </div>
-      `;
+        </div>`;
   } 
   else if (m.media_url && m.media_url.startsWith("gift:")) {
       const amount = m.media_url.split(":")[1];
       contentHtml = `
         <div class="rounded-2xl border-2 border-amber-400 bg-gradient-to-br from-amber-500/20 to-slate-900 p-4 min-w-[200px] shadow-[0_0_20px_rgba(245,158,11,0.3)]">
-            <div class="text-center">
-                <span class="text-4xl drop-shadow-[0_0_10px_rgba(245,158,11,0.8)]">🎁</span>
-                <div class="text-amber-400 font-black text-2xl mt-1">${amount} PC</div>
-                <div class="text-[10px] text-slate-300 uppercase tracking-widest mt-1">${mine ? "Gift Sent" : "Gift Received"}</div>
-            </div>
-        </div>
-      `;
+            <div class="text-center"><span class="text-4xl drop-shadow-[0_0_10px_rgba(245,158,11,0.8)]">🎁</span><div class="text-amber-400 font-black text-2xl mt-1">${amount} PC</div><div class="text-[10px] text-slate-300 uppercase tracking-widest mt-1">${mine ? "Gift Sent" : "Gift Received"}</div></div>
+        </div>`;
   }
   else if (m.content && (m.content.includes("Missed audio call") || m.content.includes("Missed video call"))) {
     contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
@@ -678,30 +578,18 @@ function addMessageToUI(m, highlightQuery = null) {
   let mediaHtml = "";
   if (!m.is_deleted && m.media_url && !m.media_url.startsWith("challenge:") && !m.media_url.startsWith("gift:")) {
     const safeUrl = escapeHTML(m.media_url);
-    if (m.media_url.match(/\.(mp4|webm|ogg|mov|mp3|wav|m4a)$/i)) {
-      mediaHtml = `<audio src="${safeUrl}" controls class="mt-2 w-48"></audio>`;
-    } else {
-      mediaHtml = `<img src="${safeUrl}" class="max-w-[200px] rounded-xl mt-1 border border-slate-700" />`;
-    }
+    if (m.media_url.match(/\.(mp4|webm|ogg|mov|mp3|wav|m4a)$/i)) mediaHtml = `<audio src="${safeUrl}" controls class="mt-2 w-48"></audio>`;
+    else mediaHtml = `<img src="${safeUrl}" class="max-w-[200px] rounded-xl mt-1 border border-slate-700" />`;
   }
 
   const timeStr = timeAgo(m.created_at);
-  
-  let statusHtml = mine 
-    ? `<div class="text-[10px] text-brand-200/70 mt-1 flex justify-end items-center gap-1"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> ${timeStr}</div>` 
-    : `<div class="text-[10px] text-slate-500 mt-1">${timeStr}</div>`;
+  let statusHtml = mine ? `<div class="text-[10px] text-brand-200/70 mt-1 flex justify-end items-center gap-1"><span class="msg-status mine">${m.read ? "✓✓" : "✓"}</span> ${timeStr}</div>` : `<div class="text-[10px] text-slate-500 mt-1">${timeStr}</div>`;
 
-  if (m.read && mine) {
-    setTimeout(() => { const s = wrap.querySelector('.msg-status'); if (s) s.classList.add("text-white"); }, 10);
-  }
+  if (m.read && mine) setTimeout(() => { const s = wrap.querySelector('.msg-status'); if (s) s.classList.add("text-white"); }, 10);
 
   let deleteBtnHtml = "";
   if (mine && !m.is_deleted) {
-      deleteBtnHtml = `
-        <button class="delete-btn absolute left-2 bottom-2 opacity-30 hover:opacity-100 transition-opacity p-1 text-slate-300 hover:text-red-400 rounded" title="Delete">
-            🗑️
-        </button>
-      `;
+      deleteBtnHtml = `<button class="delete-btn absolute left-2 bottom-2 opacity-30 hover:opacity-100 transition-opacity p-1 text-slate-300 hover:text-red-400 rounded" title="Delete">🗑️</button>`;
   }
 
   if (m.content && !m.is_deleted && !m.media_url) {
@@ -710,50 +598,28 @@ function addMessageToUI(m, highlightQuery = null) {
       wrap.innerHTML = `${senderHtml}${replyHtml}<div class="w-full flex ${mine ? 'justify-end' : 'justify-start'}"><div class="${bubbleClass} max-w-[85%] p-2">${contentHtml}${mediaHtml}${statusHtml}</div>${deleteBtnHtml}</div>`;
   }
 
-  let startX = 0;
-  let currentX = 0;
-  let isSwiping = false;
-  
-  wrap.addEventListener("touchstart", (e) => {
-      startX = e.touches[0].clientX;
-      isSwiping = false;
-  }, { passive: true });
-
-  wrap.addEventListener("touchmove", (e) => {
-      currentX = e.touches[0].clientX;
-      const diff = currentX - startX;
-      if (Math.abs(diff) > 20) isSwiping = true;
-  }, { passive: true });
-
+  let startX = 0, currentX = 0, isSwiping = false;
+  wrap.addEventListener("touchstart", (e) => { startX = e.touches[0].clientX; isSwiping = false; }, { passive: true });
+  wrap.addEventListener("touchmove", (e) => { currentX = e.touches[0].clientX; if (Math.abs(currentX - startX) > 20) isSwiping = true; }, { passive: true });
   wrap.addEventListener("touchend", (e) => {
       if (!isSwiping) return;
       const diff = currentX - startX;
-
-      if (diff > 50) {
-          setReply(m);
-      } else if (diff < -50 && mine && !m.is_deleted) {
+      if (diff > 50) setReply(m);
+      else if (diff < -50 && mine && !m.is_deleted) {
           if (confirm("Delete this message?")) {
-              if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-                  dmSocket.send(JSON.stringify({ type: "dm:delete", message_id: m.id }));
-              }
+              if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:delete", message_id: m.id }));
           }
       }
   });
 
-  wrap.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      setReply(m);
-  });
-
+  wrap.addEventListener("contextmenu", (e) => { e.preventDefault(); setReply(m); });
   wrap.addEventListener("dblclick", (e) => showEmojiPicker(e, m.id));
 
   if (deleteBtnHtml) {
       wrap.querySelector(".delete-btn").onclick = (e) => {
           e.stopPropagation();
           if (confirm("Are you sure you want to delete this message for everyone?")) {
-              if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-                  dmSocket.send(JSON.stringify({ type: "dm:delete", message_id: m.id }));
-              }
+              if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:delete", message_id: m.id }));
           }
       };
   }
@@ -779,12 +645,10 @@ function addMessageToUI(m, highlightQuery = null) {
 function showEmojiPicker(e, messageId) {
     e.preventDefault();
     e.stopPropagation();
-    
     document.querySelectorAll(".emoji-picker").forEach(el => el.remove());
 
     const picker = document.createElement("div");
     picker.className = "emoji-picker fixed z-[999] bg-slate-800 border border-slate-700 rounded-full shadow-2xl flex gap-1 p-1 animate-[pop_0.2s_ease-out]";
-    
     const x = e.clientX || (e.touches && e.touches[0].clientX) || e.pageX;
     const y = e.clientY || (e.touches && e.touches[0].clientY) || e.pageY;
     picker.style.left = `${x - 100}px`;
@@ -796,16 +660,13 @@ function showEmojiPicker(e, messageId) {
         btn.textContent = emoji;
         btn.onclick = (ev) => {
             ev.stopPropagation();
-            if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-                dmSocket.send(JSON.stringify({ type: "dm:react", message_id: messageId, emoji }));
-            }
+            if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:react", message_id: messageId, emoji }));
             picker.remove();
         };
         picker.appendChild(btn);
     });
 
     document.body.appendChild(picker);
-
     setTimeout(() => {
         const closePicker = () => { picker.remove(); document.removeEventListener("click", closePicker); };
         document.addEventListener("click", closePicker);
@@ -824,25 +685,16 @@ function currentTarget() { return { groupId: activeGroupId, userId: activeChatUs
 
 function sendToTarget(target, { content = "", media_url = null }) {
   if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) throw new Error("Not connected");
-  
   const payload = { content, media_url };
   if (replyingToMessage) payload.reply_to_id = replyingToMessage.id;
-
-  if (target.groupId) {
-    dmSocket.send(JSON.stringify({ type: "group:send", ...payload, group_id: target.groupId }));
-  } else if (target.userId) {
-    dmSocket.send(JSON.stringify({ type: "dm:send", ...payload, target_id: target.userId }));
-  }
+  if (target.groupId) dmSocket.send(JSON.stringify({ type: "group:send", ...payload, group_id: target.groupId }));
+  else if (target.userId) dmSocket.send(JSON.stringify({ type: "dm:send", ...payload, target_id: target.userId }));
 }
 
 async function uploadMedia(file) {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch("/api/v1/dm/upload", {
-    method: "POST",
-    headers: { "Authorization": "Bearer " + api.getToken() },
-    body: formData
-  });
+  const res = await fetch("/api/v1/dm/upload", { method: "POST", headers: { "Authorization": "Bearer " + api.getToken() }, body: formData });
   if (!res.ok) throw new Error("Upload failed");
   const data = await res.json();
   return data.url;
@@ -861,9 +713,7 @@ $("chatForm")?.addEventListener("submit", async (e) => {
   $("chatInput").value = "";
   const target = currentTarget();
   sendToTarget(target, { content: text });
-  if (target.userId) {
-    dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: target.userId, is_typing: false }));
-  }
+  if (target.userId) dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: target.userId, is_typing: false }));
   removeReplyPreview();
 });
 
@@ -873,22 +723,17 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
 
     const menu = document.createElement("div");
     menu.className = "attachment-menu absolute bottom-full mb-3 left-0 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 w-48 flex flex-col gap-1 z-[100] animate-[slideUp_0.2s_ease-out]";
-    
     menu.innerHTML = `
-        <button id="menuImage" class="flex items-center gap-3 w-full p-2.5 hover:bg-slate-800 rounded-xl transition text-left">
-            <span class="text-xl">🖼️</span> <span class="text-sm text-slate-200 font-bold">Photo</span>
-        </button>
-        <button id="menuGift" class="flex items-center gap-3 w-full p-2.5 hover:bg-slate-800 rounded-xl transition text-left">
-            <span class="text-xl">🎁</span> <span class="text-sm text-slate-200 font-bold">Send Coins</span>
-        </button>
-        <button id="menuVoice" class="flex items-center gap-3 w-full p-2.5 hover:bg-slate-800 rounded-xl transition text-left">
-            <span class="text-xl">🎤</span> <span class="text-sm text-slate-200 font-bold">Voice Note</span>
-        </button>
+        <button id="menuImage" class="flex items-center gap-3 w-full p-2.5 hover:bg-slate-800 rounded-xl transition text-left"><span class="text-xl">🖼️</span> <span class="text-sm text-slate-200 font-bold">Photo</span></button>
+        <button id="menuGift" class="flex items-center gap-3 w-full p-2.5 hover:bg-slate-800 rounded-xl transition text-left"><span class="text-xl">🎁</span> <span class="text-sm text-slate-200 font-bold">Send Coins</span></button>
+        <button id="menuVoice" class="flex items-center gap-3 w-full p-2.5 hover:bg-slate-800 rounded-xl transition text-left"><span class="text-xl">🎤</span> <span class="text-sm text-slate-200 font-bold">Voice Note</span></button>
     `;
     
     const form = $("chatForm");
-    form.style.position = "relative";
-    form.appendChild(menu);
+    if (form) {
+        form.style.position = "relative";
+        form.appendChild(menu);
+    }
 
     setTimeout(() => {
         const closeMenu = () => { menu.remove(); document.removeEventListener("click", closeMenu); };
@@ -897,16 +742,10 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
 
     menu.querySelector("#menuImage").onclick = () => {
         const input = document.createElement("input");
-        input.type = "file";
-        input.accept = "image/*";
+        input.type = "file"; input.accept = "image/*";
         input.onchange = async (ev) => {
-            const file = ev.target.files[0];
-            if (!file) return;
-            try {
-                const url = await uploadMedia(file);
-                sendToTarget(currentTarget(), { media_url: url });
-                removeReplyPreview();
-            } catch (err) { alert("Could not upload image."); }
+            const file = ev.target.files[0]; if (!file) return;
+            try { const url = await uploadMedia(file); sendToTarget(currentTarget(), { media_url: url }); removeReplyPreview(); } catch (err) { alert("Could not upload image."); }
         };
         input.click();
     };
@@ -931,10 +770,7 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
         modal.querySelector("#sendGiftBtn").onclick = () => {
             const amount = parseInt(modal.querySelector("#giftAmountInput").value, 10);
             if (isNaN(amount) || amount <= 0) return alert("Enter a valid amount");
-            if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-                dmSocket.send(JSON.stringify({ type: "dm:gift", target_id: activeChatUserId, amount }));
-                modal.remove();
-            }
+            if (dmSocket && dmSocket.readyState === WebSocket.OPEN) { dmSocket.send(JSON.stringify({ type: "dm:gift", target_id: activeChatUserId, amount })); modal.remove(); }
         };
     };
 
@@ -951,13 +787,7 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
                 stream.getTracks().forEach(t => t.stop());
                 const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                 const file = new File([audioBlob], "voice_note.webm", { type: "audio/webm" });
-                try {
-                    const url = await uploadMedia(file);
-                    sendToTarget(recordingTarget, { media_url: url });
-                    removeReplyPreview();
-                } catch (err) {
-                    alert("Could not upload voice note.");
-                }
+                try { const url = await uploadMedia(file); sendToTarget(recordingTarget, { media_url: url }); removeReplyPreview(); } catch (err) { alert("Could not upload voice note."); }
             };
 
             mediaRecorder.start();
@@ -967,15 +797,9 @@ $("attachmentBtn")?.addEventListener("click", (e) => {
             toast.id = "recordingToast";
             toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-red-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold flex items-center gap-2 cursor-pointer animate-pulse";
             toast.innerHTML = `⏹️ Recording... Tap to stop`;
-            toast.onclick = () => {
-                mediaRecorder.stop();
-                isRecording = false;
-                toast.remove();
-            };
+            toast.onclick = () => { mediaRecorder.stop(); isRecording = false; toast.remove(); };
             document.body.appendChild(toast);
-        } catch (err) {
-            alert("Microphone access denied. Check browser permissions.");
-        }
+        } catch (err) { alert("Microphone access denied. Check browser permissions."); }
     };
 });
 
@@ -1009,27 +833,16 @@ $("createGroupBtn")?.addEventListener("click", () => {
   modal.querySelector("#createGroupSubmit").onclick = async () => {
     const name = modal.querySelector("#groupNameInput").value.trim();
     const selected = Array.from(modal.querySelectorAll(".group-member-cb:checked")).map(cb => cb.value);
-
     if (!name || selected.length === 0) return alert("Enter name and select members.");
-
     try {
       await api.request("/api/v1/groups", { method: "POST", body: { name, member_ids: selected } });
-      modal.remove();
-      setActiveTab("groups");
-      await refreshAll();
-      renderList();
-    } catch (err) {
-      alert("Failed to create group: " + err.message);
-    }
+      modal.remove(); setActiveTab("groups"); await refreshAll(); renderList();
+    } catch (err) { alert("Failed to create group: " + err.message); }
   };
 });
 
 async function showChallengeModal(userId, username) {
-  const games = [
-    { slug: "ludo",  name: "Ludo",  icon: "🎲", max: 2 },
-    { slug: "chess", name: "Chess", icon: "♟️", max: 2 },
-    { slug: "whot",  name: "Whot",  icon: "🃏", max: 2 },
-  ];
+  const games = [ { slug: "ludo",  name: "Ludo",  icon: "🎲", max: 2 }, { slug: "chess", name: "Chess", icon: "♟️", max: 2 }, { slug: "whot",  name: "Whot",  icon: "🃏", max: 2 } ];
 
   const modal = document.createElement("div");
   modal.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
@@ -1037,21 +850,15 @@ async function showChallengeModal(userId, username) {
     <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-cyber-pink/50 shadow-[0_0_40px_rgba(236,72,153,0.3)]">
       <h3 class="text-white font-bold text-lg mb-1">Challenge ${escapeHTML(username)} ⚔️</h3>
       <p class="text-slate-400 text-xs mb-4">Pick a game — we'll create a private room and send the invite.</p>
-
       <div class="grid grid-cols-3 gap-2 mb-4">
         ${games.map(g => `
-          <button data-game="${g.slug}" data-name="${g.name}" data-max="${g.max}"
-            class="game-pick-btn flex flex-col items-center gap-1 p-3 rounded-xl bg-slate-800 border-2 border-slate-700 hover:border-cyber-pink transition">
-            <span class="text-2xl">${g.icon}</span>
-            <span class="text-[10px] text-white font-bold">${escapeHTML(g.name)}</span>
+          <button data-game="${g.slug}" data-name="${g.name}" data-max="${g.max}" class="game-pick-btn flex flex-col items-center gap-1 p-3 rounded-xl bg-slate-800 border-2 border-slate-700 hover:border-cyber-pink transition">
+            <span class="text-2xl">${g.icon}</span><span class="text-[10px] text-white font-bold">${escapeHTML(g.name)}</span>
           </button>
         `).join("")}
       </div>
-
       <label class="block text-[10px] text-slate-400 uppercase tracking-wider mb-1">Wager (optional, PlayCoins)</label>
-      <input type="number" id="challengeWager" min="0" max="10000" value="0" placeholder="0"
-        class="w-full bg-slate-800 text-white text-center text-sm font-bold rounded-lg p-2.5 mb-4 focus:outline-none border border-slate-700 focus:border-cyber-pink" />
-
+      <input type="number" id="challengeWager" min="0" max="10000" value="0" placeholder="0" class="w-full bg-slate-800 text-white text-center text-sm font-bold rounded-lg p-2.5 mb-4 focus:outline-none border border-slate-700 focus:border-cyber-pink" />
       <button id="cancelChallengeBtn" class="w-full py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
     </div>
   `;
@@ -1060,36 +867,20 @@ async function showChallengeModal(userId, username) {
 
   modal.querySelectorAll(".game-pick-btn").forEach(btn => {
     btn.onclick = async () => {
-      const gameSlug = btn.dataset.game;
-      const gameName = btn.dataset.name;
-      const maxPlayers = parseInt(btn.dataset.max, 10) || 2;
-      const wagerInput = modal.querySelector("#challengeWager");
-      let wager = parseInt(wagerInput.value, 10);
+      const gameSlug = btn.dataset.game, gameName = btn.dataset.name, maxPlayers = parseInt(btn.dataset.max, 10) || 2;
+      let wager = parseInt(modal.querySelector("#challengeWager").value, 10);
       if (isNaN(wager) || wager < 0) wager = 0;
       if (wager > 10000) wager = 10000;
 
-      btn.disabled = true;
-      btn.classList.add("opacity-50");
+      btn.disabled = true; btn.classList.add("opacity-50");
 
       try {
-        const room = await api.request("/api/v1/rooms", {
-          method: "POST",
-          body: { game_slug: gameSlug, max_players: maxPlayers, wager, is_public: false }
-        });
+        const room = await api.request("/api/v1/rooms", { method: "POST", body: { game_slug: gameSlug, max_players: maxPlayers, wager, is_public: false } });
         const roomCode = room.code;
         if (!roomCode) throw new Error("No room code returned from server");
-
-        if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) {
-          throw new Error("Chat socket not connected — wait a second and try again");
-        }
-        dmSocket.send(JSON.stringify({
-          type: "dm:challenge",
-          target_id: userId,
-          content: `invited you to play ${gameName}${wager > 0 ? ` for ${wager} PC` : ""}!`,
-          game_slug: gameSlug,
-          room_code: roomCode
-        }));
-
+        if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) throw new Error("Chat socket not connected — wait a second and try again");
+        
+        dmSocket.send(JSON.stringify({ type: "dm:challenge", target_id: userId, content: `invited you to play ${gameName}${wager > 0 ? ` for ${wager} PC` : ""}!`, game_slug: gameSlug, room_code: roomCode }));
         modal.remove();
 
         const toast = document.createElement("div");
@@ -1099,8 +890,7 @@ async function showChallengeModal(userId, username) {
         setTimeout(() => toast.remove(), 3000);
       } catch (err) {
         alert("Could not send challenge: " + err.message);
-        btn.disabled = false;
-        btn.classList.remove("opacity-50");
+        btn.disabled = false; btn.classList.remove("opacity-50");
       }
     };
   });
@@ -1124,9 +914,7 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   `;
 
   let audioEl = document.createElement("audio");
-  audioEl.id = "globalRemoteAudio";
-  audioEl.autoplay = true;
-  audioEl.playsInline = true;
+  audioEl.id = "globalRemoteAudio"; audioEl.autoplay = true; audioEl.playsInline = true;
   document.body.appendChild(audioEl);
 
   if (isVideo) {
@@ -1214,12 +1002,9 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   };
 }
 
-let callTimerInterval = null;
-let callSeconds = 0;
-
+let callTimerInterval = null, callSeconds = 0;
 function startCallTimer() {
-  clearInterval(callTimerInterval);
-  callSeconds = 0;
+  clearInterval(callTimerInterval); callSeconds = 0;
   callTimerInterval = setInterval(() => {
     callSeconds++;
     const mins = String(Math.floor(callSeconds / 60)).padStart(2, '0');
@@ -1227,7 +1012,6 @@ function startCallTimer() {
     if ($("callTimer")) $("callTimer").textContent = `${mins}:${secs}`;
   }, 1000);
 }
-
 function stopCallTimer() { clearInterval(callTimerInterval); }
 
 async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremium) {
@@ -1240,20 +1024,14 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
     if ($("localVideo")) $("localVideo").srcObject = localStream;
 
     pc = new RTCPeerConnection(ICE_SERVERS);
-    
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     pc.ontrack = (event) => {
       if (!remoteStream) remoteStream = new MediaStream();
       remoteStream.addTrack(event.track);
       if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
-      
       const audioEl = $("globalRemoteAudio");
-      if (audioEl) { 
-          audioEl.srcObject = remoteStream; 
-          audioEl.play().catch(e => console.log("Autoplay blocked", e)); 
-      }
-      
+      if (audioEl) { audioEl.srcObject = remoteStream; audioEl.play().catch(e => console.log("Autoplay blocked", e)); }
       stopRingtone();
       startCallTimer();
     };
@@ -1266,28 +1044,20 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
-    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-      dmSocket.send(JSON.stringify({ type: "call:offer", target_id: targetId, offer: offer, is_video: isVideo }));
-    }
+    if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:offer", target_id: targetId, offer: offer, is_video: isVideo }));
 
     callTimeout = setTimeout(() => {
       if (currentCallTargetId) {
         alert("User is offline or didn't answer.");
-        if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-          dmSocket.send(JSON.stringify({ type: "call:end", target_id: targetId, call_type: isVideo ? 'video' : 'audio', is_missed: true }));
-        }
+        if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:end", target_id: targetId, call_type: isVideo ? 'video' : 'audio', is_missed: true }));
         endCall();
       }
     }, 30000);
 
   } catch (err) {
     console.error("WEBCAM ERROR:", err);
-    if (err.name === 'NotAllowedError') {
-      alert("You blocked the camera/microphone. Click the Lock icon in the URL bar and allow them.");
-    } else {
-      alert("Could not access camera/microphone: " + err.message);
-    }
+    if (err.name === 'NotAllowedError') alert("You blocked the camera/microphone. Click the Lock icon in the URL bar and allow them.");
+    else alert("Could not access camera/microphone: " + err.message);
     endCall();
   }
 }
@@ -1321,16 +1091,12 @@ function showIncomingCall(senderId, offer, isVideo) {
   $("rejectCallBtn").onclick = () => {
     stopRingtone();
     if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:reject", target_id: senderId, call_type: isVideo ? 'video' : 'audio' }));
-    modal.remove();
-    incomingCallModal = null;
+    modal.remove(); incomingCallModal = null;
   };
 
   $("acceptCallBtn").onclick = async () => {
-    stopRingtone();
-    modal.remove();
-    incomingCallModal = null;
-    currentCallTargetId = senderId;
-    isVideoCall = isVideo;
+    stopRingtone(); modal.remove(); incomingCallModal = null;
+    currentCallTargetId = senderId; isVideoCall = isVideo;
 
     createVideoOverlay(isVideo, caller.username, caller.avatar_id, caller.is_premium);
 
@@ -1339,36 +1105,26 @@ function showIncomingCall(senderId, offer, isVideo) {
       if ($("localVideo")) $("localVideo").srcObject = localStream;
 
       pc = new RTCPeerConnection(ICE_SERVERS);
-      
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
       pc.ontrack = (event) => {
         if (!remoteStream) remoteStream = new MediaStream();
         remoteStream.addTrack(event.track);
         if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
-        
         const audioEl = $("globalRemoteAudio");
-        if (audioEl) { 
-            audioEl.srcObject = remoteStream; 
-            audioEl.play().catch(e => console.log("Autoplay blocked", e)); 
-        }
-        
+        if (audioEl) { audioEl.srcObject = remoteStream; audioEl.play().catch(e => console.log("Autoplay blocked", e)); }
         startCallTimer();
       };
 
       pc.onicecandidate = (event) => {
-        if (event.candidate && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-          dmSocket.send(JSON.stringify({ type: "call:ice-candidate", target_id: senderId, candidate: event.candidate }));
-        }
+        if (event.candidate && dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:ice-candidate", target_id: senderId, candidate: event.candidate }));
       };
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-        dmSocket.send(JSON.stringify({ type: "call:answer", target_id: senderId, answer: answer }));
-      }
+      if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:answer", target_id: senderId, answer: answer }));
     } catch (err) {
       alert("Camera/Microphone access denied. Check browser permissions.");
       endCall();
@@ -1376,33 +1132,24 @@ function showIncomingCall(senderId, offer, isVideo) {
   };
 }
 
-let ringtoneCtx = null;
-let ringtoneInterval = null;
-
+let ringtoneCtx = null, ringtoneInterval = null;
 function playRingtone() {
   try {
     ringtoneCtx = new (window.AudioContext || window.webkitAudioContext)();
     const playBeep = () => {
-      const osc = ringtoneCtx.createOscillator();
-      const gain = ringtoneCtx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(440, ringtoneCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(880, ringtoneCtx.currentTime + 0.1);
-      gain.gain.setValueAtTime(0.5, ringtoneCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ringtoneCtx.currentTime + 0.5);
-      osc.connect(gain); gain.connect(ringtoneCtx.destination);
-      osc.start(); osc.stop(ringtoneCtx.currentTime + 0.5);
+      const osc = ringtoneCtx.createOscillator(); const gain = ringtoneCtx.createGain();
+      osc.type = "sine"; osc.frequency.setValueAtTime(440, ringtoneCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(880, ringtoneCtx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.5, ringtoneCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ringtoneCtx.currentTime + 0.5);
+      osc.connect(gain); gain.connect(ringtoneCtx.destination); osc.start(); osc.stop(ringtoneCtx.currentTime + 0.5);
     };
     playBeep(); ringtoneInterval = setInterval(playBeep, 1500);
   } catch (e) { console.log("Audio error", e); }
 }
-
 function stopRingtone() {
   if (ringtoneInterval) clearInterval(ringtoneInterval);
   if (ringtoneCtx) ringtoneCtx.close();
   ringtoneInterval = null; ringtoneCtx = null;
 }
-
 function endCall() {
   clearTimeout(callTimeout); callTimeout = null;
   stopRingtone(); stopCallTimer();
@@ -1413,27 +1160,18 @@ function endCall() {
   if (currentCallTargetId && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
     try { dmSocket.send(JSON.stringify({ type: "call:end", target_id: currentCallTargetId })); } catch (e) {}
   }
-  const overlay = $("videoCallOverlay");
-  if (overlay) overlay.remove();
-  
-  const audioEl = $("globalRemoteAudio");
-  if (audioEl) audioEl.remove();
-
+  const overlay = $("videoCallOverlay"); if (overlay) overlay.remove();
+  const audioEl = $("globalRemoteAudio"); if (audioEl) audioEl.remove();
   currentCallTargetId = null;
 }
 
 let groupedStories = {};
-
 async function renderStories() {
   let bar = $("storyBar");
   if (!bar) {
-    const listPanel = $("listPanel");
-    const searchDiv = listPanel?.querySelector(".p-4.border-b");
+    const listPanel = $("listPanel"); const searchDiv = listPanel?.querySelector(".p-4.border-b");
     if (searchDiv) {
-      bar = document.createElement("div");
-      bar.id = "storyBar";
-      bar.className = "flex gap-3 overflow-x-auto p-3 border-b border-slate-800 scrollbar-hide";
-      searchDiv.after(bar);
+      bar = document.createElement("div"); bar.id = "storyBar"; bar.className = "flex gap-3 overflow-x-auto p-3 border-b border-slate-800 scrollbar-hide"; searchDiv.after(bar);
     }
   }
   if (!bar) return;
@@ -1446,12 +1184,7 @@ async function renderStories() {
     groupedStories[s.user_id].items.push(s);
   });
 
-  let html = `
-    <div class="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer" id="addStatusBtn">
-      <div class="w-14 h-14 rounded-full border-2 border-slate-700 bg-slate-800 flex items-center justify-center text-xl text-slate-400 hover:border-brand-500 transition">+</div>
-      <div class="text-[10px] text-slate-400 font-bold">Add</div>
-    </div>
-  `;
+  let html = `<div class="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer" id="addStatusBtn"><div class="w-14 h-14 rounded-full border-2 border-slate-700 bg-slate-800 flex items-center justify-center text-xl text-slate-400 hover:border-brand-500 transition">+</div><div class="text-[10px] text-slate-400 font-bold">Add</div></div>`;
 
   Object.entries(groupedStories).forEach(([uid, group]) => {
     const isSelf = group.relation === "self";
@@ -1460,19 +1193,16 @@ async function renderStories() {
       <div class="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer view-status-btn" data-uid="${escapeHTML(uid)}">
         <div class="w-14 h-14 rounded-full border-2 ${ringClass} p-0.5">${avatarHTML(group.avatar_id, "md")}</div>
         <div class="text-[10px] text-slate-300 font-bold truncate w-14 text-center">${isSelf ? "You" : escapeHTML(group.username)}</div>
-      </div>
-    `;
+      </div>`;
   });
 
   bar.innerHTML = html;
-
   bar.querySelectorAll(".view-status-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const group = groupedStories[btn.dataset.uid];
       if (group) showStatusSlideshow(group.items);
     });
   });
-
   $("addStatusBtn")?.addEventListener("click", showCreateStatusModal);
 }
 
@@ -1491,7 +1221,6 @@ function showStatusSlideshow(items) {
       if (status.media_url.match(/\.(mp4|webm|ogg|mov)$/i)) mediaHTML = `<video src="${safeUrl}" controls autoplay class="w-full h-full object-contain"></video>`;
       else mediaHTML = `<img src="${safeUrl}" class="w-full h-full object-contain" />`;
     }
-
     let viewCountHtml = status.relation === "self" && status.viewers ? `<div class="text-xs text-slate-300 mt-1">👁️ ${status.viewers.length} views</div>` : "";
 
     overlay.innerHTML = `
@@ -1512,14 +1241,11 @@ function showStatusSlideshow(items) {
         </div>
         <div id="tapLeft" class="absolute top-0 bottom-0 left-0 w-1/3 z-10 cursor-pointer"></div>
         <div id="tapRight" class="absolute top-0 bottom-0 right-0 w-2/3 z-10 cursor-pointer"></div>
-
         ${status.relation === "self" ? "" : `
         <div class="absolute bottom-4 left-4 right-4 z-20">
           <input type="text" id="statusReplyInput" placeholder="Reply to story..." class="w-full bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-full px-4 py-2 text-sm focus:outline-none" />
-        </div>
-        `}
-      </div>
-    `;
+        </div>`}
+      </div>`;
 
     overlay.querySelector("#closeStoryBtn").addEventListener("click", () => { clearTimeout(overlay._timeout); overlay.remove(); });
     overlay.querySelector("#tapLeft").addEventListener("click", () => { if (currentIndex > 0) { currentIndex--; renderSlide(); } });
@@ -1534,24 +1260,20 @@ function showStatusSlideshow(items) {
       replyInput.addEventListener("keypress", (e) => {
         if (e.key === "Enter") {
           e.preventDefault();
-          const val = replyInput.value.trim();
-          if (!val) return;
+          const val = replyInput.value.trim(); if (!val) return;
           if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
             dmSocket.send(JSON.stringify({ type: "dm:send", target_id: status.user_id, content: val, reply_to_status_id: status.id }));
-            alert("Reply sent!");
-            replyInput.value = ""; clearTimeout(overlay._timeout); overlay.remove();
+            alert("Reply sent!"); replyInput.value = ""; clearTimeout(overlay._timeout); overlay.remove();
           }
         }
       });
     }
-
     if (overlay._timeout) clearTimeout(overlay._timeout);
     overlay._timeout = setTimeout(() => {
       if (currentIndex < items.length - 1) { currentIndex++; renderSlide(); }
       else { overlay.remove(); }
     }, 5000);
   }
-
   renderSlide();
   document.body.appendChild(overlay);
 }
@@ -1594,19 +1316,13 @@ function showCreateStatusModal() {
     try {
       const res = await fetch("/api/v1/friends/status", { method: "POST", headers: { "Authorization": "Bearer " + api.getToken() }, body: formData });
       if (!res.ok) throw new Error("Failed to post");
-      overlay.remove();
-      await renderStories();
+      overlay.remove(); await renderStories();
     } catch (e) { alert("Error posting status"); }
   });
 }
 
 async function refreshAll() {
-  const [f, r, c, g] = await Promise.allSettled([
-    api.listFriends(),
-    api.listFriendRequests(),
-    api.listConversations(),
-    api.request("/api/v1/groups")
-  ]);
+  const [f, r, c, g] = await Promise.allSettled([ api.listFriends(), api.listFriendRequests(), api.listConversations(), api.request("/api/v1/groups") ]);
   if (f.status === "fulfilled") friends = f.value; else console.error("friends:", f.reason);
   if (r.status === "fulfilled") requests = r.value; else console.error("requests:", r.reason);
   if (c.status === "fulfilled") conversations = c.value; else console.error("conversations:", c.reason);
@@ -1624,16 +1340,13 @@ async function boot() {
   try { me = await api.me(); myId = me.id; } catch { api.clearToken(); window.location.href = "/"; return; }
 
   connectDMSocket();
-
   await refreshAll();
   renderList();
   await renderStories();
 
   pollTimer = setInterval(async () => {
-    await refreshAll();
-    await renderStories();
+    await refreshAll(); await renderStories();
     if (!$("searchInput").value.trim()) renderList();
   }, 10000);
 }
-
 boot();
