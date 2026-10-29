@@ -57,22 +57,11 @@ class Profile(Base):
     chess_draws: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     bio: Mapped[str] = mapped_column(Text, default="", nullable=False)
     country: Mapped[str] = mapped_column(String(2), default="", nullable=False)
-    last_seen: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_now, nullable=False
-    )
+    
+    # 🟢 THIS IS WHERE last_seen BELONGS
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     
     # --- NEW: Chat Auto-Clear Settings ---
     chat_retention_days: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     user: Mapped[User] = relationship("User", back_populates="profile")
-# In backend/app/models/user.py
-# Add this to your existing User class:
-
-from datetime import datetime
-from sqlalchemy import DateTime # make sure this is imported at the top
-
-class User(Base):
-    # ... your existing columns ...
-    
-    # 🟢 NEW: Track when the user was last online
-    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
