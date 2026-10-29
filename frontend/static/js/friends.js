@@ -19,23 +19,21 @@ let isVideoCall = false;
 let isMuted = false;
 let callTimeout = null;
 let incomingCallModal = null;
+let pendingCandidates = []; // ICE candidates that arrive before the peer connection is ready
 
-// --- TURN Servers for reliable connection on mobile data ---
+// --- STUN/TURN servers ---
+// TIP: the free openrelay servers are public and can be unreliable.
+// For best results on mobile data, create a free account at metered.ca
+// and replace the TURN entries below with your own credentials.
 const ICE_SERVERS = {
-    iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-        {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        },
-        {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        }
-    ]
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turns:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+  ]
 };
 
 // --- Voice Note Variables ---
@@ -88,7 +86,7 @@ function connectDMSocket() {
       refreshAll();
     }
     else if (msg.type === "group:created") {
-      await refreshAll(); 
+      await refreshAll();
       if (activeTab === "groups") renderList();
       const toast = document.createElement("div");
       toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-brand-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold animate-bounce cursor-pointer flex items-center gap-2";
@@ -108,11 +106,39 @@ function connectDMSocket() {
         document.querySelectorAll(".msg-status.mine").forEach(el => { el.textContent = "✓✓"; el.classList.add("text-cyan-400"); });
       }
     }
-    else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer, !!msg.is_video);
-    else if (msg.type === "call:answer") {
-      if (pc) { clearTimeout(callTimeout); pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); }
+    else if (msg.type === "call:offer") {
+      // Already in a call or already ringing -> auto-decline the new one
+      if (pc || currentCallTargetId || incomingCallModal) {
+        if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+          dmSocket.send(JSON.stringify({ type: "call:reject", target_id: msg.sender_id, call_type: msg.is_video ? "video" : "audio" }));
+        }
+        return;
+      }
+      pendingCandidates = [];
+      // Work out if it's a video call even if the backend didn't forward is_video
+      const video =
+        !!msg.is_video ||
+        !!(msg.offer && msg.offer.is_video) ||
+        (((msg.offer && msg.offer.sdp) || "").includes("m=video"));
+      showIncomingCall(msg.sender_id, msg.offer, video);
     }
-    else if (msg.type === "call:ice-candidate") { if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); }
+    else if (msg.type === "call:answer") {
+      if (pc) {
+        clearTimeout(callTimeout);
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+          await flushCandidates();
+        } catch (e) { console.error("setRemoteDescription(answer) failed", e); }
+      }
+    }
+    else if (msg.type === "call:ice-candidate") {
+      if (!msg.candidate) return;
+      if (pc && pc.remoteDescription) {
+        pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch((e) => console.warn("ICE add failed", e));
+      } else {
+        pendingCandidates.push(msg.candidate); // buffer until remote description is set
+      }
+    }
     else if (msg.type === "call:end") endCall();
     else if (msg.type === "call:reject") {
       if (currentCallTargetId) alert("Call was declined.");
@@ -366,25 +392,23 @@ function addMessageToUI(m) {
 
   let contentHtml = "";
   if (m.media_url && m.media_url.startsWith("challenge:")) {
-      const parts = m.media_url.split(":");
-      const gameSlug = parts[1];
-      const roomCode = parts[2];
-      const gameName = gameSlug.charAt(0).toUpperCase() + gameSlug.slice(1);
-      contentHtml = `
-        <div class="rounded-xl border-2 border-cyber-pink bg-slate-900 p-4 min-w-[220px] shadow-[0_0_20px_rgba(236,72,153,0.3)]">
-            <div class="text-center mb-3">
-                <span class="text-3xl">⚔️</span>
-                <div class="text-white font-bold text-sm mt-1">${escapeHTML(m.content)}</div>
-            </div>
-            <button onclick="window.location.href='/room?id=${roomCode}'" class="w-full bg-cyber-pink hover:bg-pink-500 text-white font-bold py-2 rounded-lg transition shadow-lg">
-                Join Match
-            </button>
-        </div>
-      `;
-  } 
+    const parts = m.media_url.split(":");
+    const roomCode = parts[2];
+    contentHtml = `
+      <div class="rounded-xl border-2 border-cyber-pink bg-slate-900 p-4 min-w-[220px] shadow-[0_0_20px_rgba(236,72,153,0.3)]">
+          <div class="text-center mb-3">
+              <span class="text-3xl">⚔️</span>
+              <div class="text-white font-bold text-sm mt-1">${escapeHTML(m.content)}</div>
+          </div>
+          <button onclick="window.location.href='/room?id=${encodeURIComponent(roomCode)}'" class="w-full bg-cyber-pink hover:bg-pink-500 text-white font-bold py-2 rounded-lg transition shadow-lg">
+              Join Match
+          </button>
+      </div>
+    `;
+  }
   else if (m.content && (m.content.includes("Missed audio call") || m.content.includes("Missed video call"))) {
     contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
-  } 
+  }
   else if (m.content) {
     contentHtml = `<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>`;
   }
@@ -477,50 +501,50 @@ $("chatImageInput").addEventListener("change", async (e) => {
 });
 
 function showChallengeModal(targetId, targetName) {
-    const modal = document.createElement("div");
-    modal.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
-    modal.innerHTML = `
-      <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl text-center">
-        <h3 class="text-white font-bold text-lg mb-4">Challenge ${escapeHTML(targetName)}</h3>
-        <div class="grid grid-cols-3 gap-2 mb-6">
-            <button data-game="ludo" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
-                <span class="text-2xl">🎯</span><span class="text-xs font-bold text-white">Ludo</span>
-            </button>
-            <button data-game="whot" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
-                <span class="text-2xl">🃏</span><span class="text-xs font-bold text-white">Whot</span>
-            </button>
-            <button data-game="chess" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
-                <span class="text-2xl">♟️</span><span class="text-xs font-bold text-white">Chess</span>
-            </button>
-        </div>
-        <button id="cancelChallengeBtn" class="w-full py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
+  const modal = document.createElement("div");
+  modal.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
+  modal.innerHTML = `
+    <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl text-center">
+      <h3 class="text-white font-bold text-lg mb-4">Challenge ${escapeHTML(targetName)}</h3>
+      <div class="grid grid-cols-3 gap-2 mb-6">
+          <button data-game="ludo" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
+              <span class="text-2xl">🎯</span><span class="text-xs font-bold text-white">Ludo</span>
+          </button>
+          <button data-game="whot" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
+              <span class="text-2xl">🃏</span><span class="text-xs font-bold text-white">Whot</span>
+          </button>
+          <button data-game="chess" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
+              <span class="text-2xl">♟️</span><span class="text-xs font-bold text-white">Chess</span>
+          </button>
       </div>
-    `;
-    document.body.appendChild(modal);
+      <button id="cancelChallengeBtn" class="w-full py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
 
-    modal.querySelector("#cancelChallengeBtn").onclick = () => modal.remove();
+  modal.querySelector("#cancelChallengeBtn").onclick = () => modal.remove();
 
-    modal.querySelectorAll(".challenge-game-btn").forEach(btn => {
-        btn.onclick = async () => {
-            const gameSlug = btn.dataset.game;
-            btn.innerHTML = `<span class="text-xs text-white">Creating...</span>`;
-            try {
-                const res = await api.createRoom({ game_slug: gameSlug, max_players: 2, is_public: false });
-                const gameName = gameSlug.charAt(0).toUpperCase() + gameSlug.slice(1);
-                dmSocket.send(JSON.stringify({
-                    type: "dm:challenge",
-                    target_id: targetId,
-                    content: `challenged you to ${gameName}!`,
-                    game_slug: gameSlug,
-                    room_code: res.id
-                }));
-                modal.remove();
-            } catch (err) {
-                alert("Failed to create game room: " + err.message);
-                btn.innerHTML = `<span class="text-xs font-bold text-white">${gameSlug}</span>`;
-            }
-        };
-    });
+  modal.querySelectorAll(".challenge-game-btn").forEach(btn => {
+    btn.onclick = async () => {
+      const gameSlug = btn.dataset.game;
+      btn.innerHTML = `<span class="text-xs text-white">Creating...</span>`;
+      try {
+        const res = await api.createRoom({ game_slug: gameSlug, max_players: 2, is_public: false });
+        const gameName = gameSlug.charAt(0).toUpperCase() + gameSlug.slice(1);
+        dmSocket.send(JSON.stringify({
+          type: "dm:challenge",
+          target_id: targetId,
+          content: `challenged you to ${gameName}!`,
+          game_slug: gameSlug,
+          room_code: res.id
+        }));
+        modal.remove();
+      } catch (err) {
+        alert("Failed to create game room: " + err.message);
+        btn.innerHTML = `<span class="text-xs font-bold text-white">${gameSlug}</span>`;
+      }
+    };
+  });
 }
 
 // --- CREATE GROUP MODAL LOGIC ---
@@ -613,9 +637,91 @@ $("voiceNoteBtn").addEventListener("click", async () => {
 // ---------------------------------------------------------
 // 4. WEBRTC CALLING SYSTEM (FIXED)
 // ---------------------------------------------------------
+
+// Add any ICE candidates that arrived before the remote description was set
+async function flushCandidates() {
+  if (!pc || !pc.remoteDescription) return;
+  const queued = pendingCandidates;
+  pendingCandidates = [];
+  for (const c of queued) {
+    try { await pc.addIceCandidate(new RTCIceCandidate(c)); }
+    catch (e) { console.warn("ICE add failed", e); }
+  }
+}
+
+// Plug the remote stream into the <audio> (sound) and <video> (picture, muted)
+function attachRemoteMedia(stream) {
+  const a = $("remoteAudio");
+  const v = $("remoteVideo");
+
+  if (v) {
+    v.muted = true; // sound comes ONLY from the <audio> element (prevents echo/double audio)
+    v.srcObject = stream;
+    v.play().catch(() => {});
+  }
+
+  if (a) {
+    a.srcObject = stream;
+    a.muted = false;
+    a.volume = 1;
+    const p = a.play();
+    if (p && p.catch) {
+      p.catch((e) => {
+        console.log("Autoplay blocked:", e);
+        const overlay = $("videoCallOverlay");
+        if (!overlay || $("tapToUnmute")) return;
+        const prompt = document.createElement("div");
+        prompt.id = "tapToUnmute";
+        prompt.className = "absolute inset-0 z-[9999] bg-black/80 flex items-center justify-center text-white font-bold text-lg cursor-pointer";
+        prompt.textContent = "Tap to enable sound";
+        prompt.onclick = () => { a.play().catch(() => {}); prompt.remove(); };
+        overlay.appendChild(prompt);
+      });
+    }
+  }
+}
+
+// Build the RTCPeerConnection (used by BOTH caller and callee)
+function createPeer(targetId) {
+  pc = new RTCPeerConnection(ICE_SERVERS);
+
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+  pc.ontrack = (event) => {
+    if (event.streams && event.streams[0]) {
+      remoteStream = event.streams[0];
+    } else {
+      if (!remoteStream) remoteStream = new MediaStream();
+      remoteStream.addTrack(event.track);
+    }
+    attachRemoteMedia(remoteStream);
+    stopRingtone();
+    if (!callTimerInterval) startCallTimer(); // ontrack fires once per track; only start once
+  };
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+      dmSocket.send(JSON.stringify({ type: "call:ice-candidate", target_id: targetId, candidate: event.candidate }));
+    }
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    if (pc) console.log("ICE state:", pc.iceConnectionState);
+  };
+
+  pc.onconnectionstatechange = () => {
+    if (!pc) return;
+    console.log("Connection state:", pc.connectionState);
+    if (pc.connectionState === "failed") {
+      alert("Call connection failed (network/TURN problem).");
+      endCall();
+    }
+  };
+}
+
 function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   if ($("videoCallOverlay")) $("videoCallOverlay").remove();
-  
+
   const overlay = document.createElement("div");
   overlay.id = "videoCallOverlay";
   overlay.className = "fixed inset-0 z-[999] bg-[#0b141a] flex flex-col items-center justify-between";
@@ -632,15 +738,15 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   `;
 
   // The remote audio element is ALWAYS needed, even for video calls
-  let audioHtml = `<audio id="remoteAudio" autoplay playsinline></audio>`;
+  const audioHtml = `<audio id="remoteAudio" autoplay playsinline></audio>`;
 
   if (isVideo) {
     overlay.innerHTML = `
       ${audioHtml}
-      <video id="remoteVideo" autoplay playsinline class="absolute inset-0 w-full h-full object-cover z-0"></video>
+      <video id="remoteVideo" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover z-0"></video>
       ${header}
       <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-slate-700 shadow-2xl z-20 transition-all"></video>
-      
+
       <div class="relative z-10 mb-8 bg-[#1f2c33]/90 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-6 shadow-2xl">
         <button id="btnToggleVideo" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button>
         <button id="btnMute" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button>
@@ -667,22 +773,8 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   }
   document.body.appendChild(overlay);
 
-  // Force audio playback (mobile browsers block it sometimes)
-  setTimeout(() => {
-      const audioEl = $("remoteAudio");
-      if (audioEl && remoteStream) {
-          audioEl.srcObject = remoteStream;
-          audioEl.play().catch(e => {
-              console.log("Autoplay blocked, showing unmute button", e);
-              // If blocked, show a prompt to tap the screen
-              const prompt = document.createElement("div");
-              prompt.className = "absolute inset-0 z-[9999] bg-black/80 flex items-center justify-center text-white font-bold text-lg cursor-pointer";
-              prompt.textContent = "Tap to unmute";
-              prompt.onclick = () => { audioEl.play(); prompt.remove(); };
-              overlay.appendChild(prompt);
-          });
-      }
-  }, 500);
+  // If the remote stream already exists (rare), attach it now
+  if (remoteStream) attachRemoteMedia(remoteStream);
 
   $("btnEnd").onclick = endCall;
 
@@ -700,39 +792,17 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     }
   };
 
-  // Toggle Video / Audio Mode
-  $("btnToggleVideo").onclick = async () => {
-      if (!localStream) return;
-      
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-          // Switch to Audio Only
-          videoTrack.enabled = false;
-          if ($("localVideo")) $("localVideo").style.display = "none";
-          if ($("remoteVideo")) $("remoteVideo").style.display = "none";
-          $("btnToggleVideo").textContent = "📹";
-      } else {
-          // Switch to Video
-          try {
-              const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-              const newVideoTrack = stream.getVideoTracks()[0];
-              localStream.addTrack(newVideoTrack);
-              
-              if (pc) {
-                  const senders = pc.getSenders();
-                  const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-                  if (videoSender) videoSender.replaceTrack(newVideoTrack);
-                  else pc.addTrack(newVideoTrack, localStream);
-              }
-              
-              if ($("localVideo")) {
-                  $("localVideo").style.display = "block";
-                  $("localVideo").srcObject = localStream;
-              }
-              if ($("remoteVideo")) $("remoteVideo").style.display = "block";
-              $("btnToggleVideo").textContent = "📵";
-          } catch (e) { alert("Camera access denied."); }
-      }
+  // Toggle camera on/off (only for calls that started as video calls)
+  $("btnToggleVideo").onclick = () => {
+    if (!localStream) return;
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (!videoTrack) {
+      alert("This is an audio call. Hang up and start a video call to use the camera.");
+      return;
+    }
+    videoTrack.enabled = !videoTrack.enabled;
+    if ($("localVideo")) $("localVideo").style.opacity = videoTrack.enabled ? "1" : "0.2";
+    $("btnToggleVideo").textContent = videoTrack.enabled ? "📹" : "📵";
   };
 }
 
@@ -750,36 +820,26 @@ function startCallTimer() {
   }, 1000);
 }
 
-function stopCallTimer() { clearInterval(callTimerInterval); }
+function stopCallTimer() {
+  clearInterval(callTimerInterval);
+  callTimerInterval = null;
+}
 
 async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremium) {
+  if (pc || currentCallTargetId) { alert("You're already in a call."); return; }
+  if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) { alert("Not connected to the server yet. Try again in a second."); return; }
+
   try {
     isVideoCall = isVideo;
+    pendingCandidates = [];
+    remoteStream = null;
     createVideoOverlay(isVideo, targetName, targetAvatar, isPremium);
     currentCallTargetId = targetId;
 
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
     if ($("localVideo")) $("localVideo").srcObject = localStream;
 
-    pc = new RTCPeerConnection(ICE_SERVERS);
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-    pc.ontrack = (event) => {
-      if (!remoteStream) remoteStream = new MediaStream();
-      remoteStream.addTrack(event.track);
-
-      if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
-      if ($("remoteAudio")) $("remoteAudio").srcObject = remoteStream;
-
-      stopRingtone();
-      startCallTimer();
-    };
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-        dmSocket.send(JSON.stringify({ type: "call:ice-candidate", target_id: targetId, candidate: event.candidate }));
-      }
-    };
+    createPeer(targetId);
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -791,19 +851,21 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
     callTimeout = setTimeout(() => {
       if (currentCallTargetId) {
         alert("User is offline or didn't answer.");
+        // The caller ends the call early -> backend logs a missed call from caller to callee
         if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
           dmSocket.send(JSON.stringify({ type: "call:end", target_id: targetId, call_type: isVideo ? 'video' : 'audio', is_missed: true }));
         }
+        currentCallTargetId = null; // avoid sending a second call:end from endCall()
         endCall();
       }
     }, 30000);
 
   } catch (err) {
-    console.error("WEBCAM ERROR:", err);
+    console.error("CALL ERROR:", err);
     if (err.name === 'NotAllowedError') {
       alert("You blocked the camera/microphone. Click the Lock icon in the URL bar and allow them.");
     } else {
-      alert("Could not access camera/microphone: " + err.message);
+      alert("Could not start call: " + err.message);
     }
     endCall();
   }
@@ -840,6 +902,7 @@ function showIncomingCall(senderId, offer, isVideo) {
     if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "call:reject", target_id: senderId, call_type: isVideo ? 'video' : 'audio' }));
     modal.remove();
     incomingCallModal = null;
+    pendingCandidates = [];
   };
 
   $("acceptCallBtn").onclick = async () => {
@@ -848,6 +911,7 @@ function showIncomingCall(senderId, offer, isVideo) {
     incomingCallModal = null;
     currentCallTargetId = senderId;
     isVideoCall = isVideo;
+    remoteStream = null;
 
     createVideoOverlay(isVideo, caller.username, caller.avatar_id, caller.is_premium);
 
@@ -855,24 +919,10 @@ function showIncomingCall(senderId, offer, isVideo) {
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
       if ($("localVideo")) $("localVideo").srcObject = localStream;
 
-      pc = new RTCPeerConnection(ICE_SERVERS);
-      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-      pc.ontrack = (event) => {
-        if (!remoteStream) remoteStream = new MediaStream();
-        remoteStream.addTrack(event.track);
-        if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
-        if ($("remoteAudio")) $("remoteAudio").srcObject = remoteStream;
-        startCallTimer();
-      };
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-          dmSocket.send(JSON.stringify({ type: "call:ice-candidate", target_id: senderId, candidate: event.candidate }));
-        }
-      };
+      createPeer(senderId);
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      await flushCandidates(); // add candidates that arrived while the phone was ringing
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
@@ -880,7 +930,8 @@ function showIncomingCall(senderId, offer, isVideo) {
         dmSocket.send(JSON.stringify({ type: "call:answer", target_id: senderId, answer: answer }));
       }
     } catch (err) {
-      alert("Camera/Microphone access denied. Check browser permissions.");
+      console.error("ACCEPT ERROR:", err);
+      alert("Could not answer call. Check camera/microphone permissions.");
       endCall();
     }
   };
@@ -894,6 +945,7 @@ function playRingtone() {
   try {
     ringtoneCtx = new (window.AudioContext || window.webkitAudioContext)();
     const playBeep = () => {
+      if (!ringtoneCtx) return;
       const osc = ringtoneCtx.createOscillator();
       const gain = ringtoneCtx.createGain();
       osc.type = "sine";
@@ -910,17 +962,22 @@ function playRingtone() {
 
 function stopRingtone() {
   if (ringtoneInterval) clearInterval(ringtoneInterval);
-  if (ringtoneCtx) ringtoneCtx.close();
+  if (ringtoneCtx) { try { ringtoneCtx.close(); } catch (e) {} }
   ringtoneInterval = null; ringtoneCtx = null;
 }
 
 function endCall() {
   clearTimeout(callTimeout); callTimeout = null;
   stopRingtone(); stopCallTimer();
+  pendingCandidates = [];
   if (incomingCallModal) { incomingCallModal.remove(); incomingCallModal = null; }
-  if (pc) { pc.close(); pc = null; }
+  if (pc) {
+    pc.ontrack = null; pc.onicecandidate = null;
+    pc.oniceconnectionstatechange = null; pc.onconnectionstatechange = null;
+    pc.close(); pc = null;
+  }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-  if (remoteStream) { remoteStream = null; }
+  remoteStream = null;
   if (currentCallTargetId && dmSocket && dmSocket.readyState === WebSocket.OPEN) {
     try { dmSocket.send(JSON.stringify({ type: "call:end", target_id: currentCallTargetId })); } catch (e) {}
   }
