@@ -8,7 +8,7 @@ import { sfx, unlockAudio } from "./sounds.js";
 const $ = (id) => document.getElementById(id);
 
 const params = new URLSearchParams(location.search);
-const roomId = params.get("id");
+let roomId = params.get("id"); // 🟢 Changed to 'let' so we can swap the code for the UUID
 const isSpectator = params.get("spectate") === "true"; // <-- Spectator Flag
 
 const selectorPanel = $("selectorPanel");
@@ -504,6 +504,21 @@ async function boot() {
   if (!token) { window.location.href = "/"; return; }
 
   try { me = await api.me(); myId = me.id; } catch { api.clearToken(); window.location.href = "/"; return; }
+
+  // 🟢 THE MAGIC FIX: Check if roomId is a 6-char code (like NYAM6V). If so, join first to get the real UUID.
+  if (roomId.length <= 8 && !isSpectator) {
+    try {
+      const joinRes = await api.request(`/api/v1/rooms/join/${roomId}`, { method: "POST" });
+      if (joinRes && joinRes.id) {
+        roomId = joinRes.id; // Swap the code out for the UUID
+      }
+    } catch (err) {
+      console.error("Failed to join room by code:", err);
+      alert("Could not join this room. It might be full or already started.");
+      window.location.href = "/lobby";
+      return;
+    }
+  }
 
   document.body.classList.remove("chat-open");
   const unlockOnce = () => { try { unlockAudio(); } catch {} };
