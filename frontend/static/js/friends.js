@@ -450,11 +450,8 @@ function addMessageToUI(m) {
 
   wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}`;
   
-  // --- Reaction Gestures ---
-  wrap.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      showEmojiPicker(e, m.id);
-  });
+  // --- NEW: Reaction Gestures ---
+  wrap.addEventListener("dblclick", (e) => showEmojiPicker(e, m.id));
   
   let pressTimer;
   wrap.addEventListener("touchstart", (e) => {
@@ -473,11 +470,6 @@ function showEmojiPicker(e, messageId) {
     e.stopPropagation();
     
     document.querySelectorAll(".emoji-picker").forEach(el => el.remove());
-    document.querySelectorAll(".emoji-backdrop").forEach(el => el.remove());
-
-    const backdrop = document.createElement("div");
-    backdrop.className = "emoji-backdrop fixed inset-0 z-[998] bg-transparent";
-    document.body.appendChild(backdrop);
 
     const picker = document.createElement("div");
     picker.className = "emoji-picker fixed z-[999] bg-slate-800 border border-slate-700 rounded-full shadow-2xl flex gap-1 p-1 animate-[pop_0.2s_ease-out]";
@@ -489,28 +481,24 @@ function showEmojiPicker(e, messageId) {
 
     EMOJIS.forEach(emoji => {
         const btn = document.createElement("button");
-        btn.className = "text-2xl hover:scale-125 transition p-1 select-none";
+        btn.className = "text-2xl hover:scale-125 transition p-1";
         btn.textContent = emoji;
-        
-        // Use pointerdown so it fires instantly and doesn't get canceled
-        btn.addEventListener("pointerdown", (ev) => {
-            ev.preventDefault();
+        btn.onclick = (ev) => {
             ev.stopPropagation();
             if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
                 dmSocket.send(JSON.stringify({ type: "dm:react", message_id: messageId, emoji }));
             }
             picker.remove();
-            backdrop.remove();
-        });
+        };
         picker.appendChild(btn);
     });
 
     document.body.appendChild(picker);
-    
-    backdrop.addEventListener("pointerdown", () => {
-        picker.remove();
-        backdrop.remove();
-    });
+
+    setTimeout(() => {
+        const closePicker = () => { picker.remove(); document.removeEventListener("click", closePicker); };
+        document.addEventListener("click", closePicker);
+    }, 10);
 }
 
 $("chatInput")?.addEventListener("input", () => {
