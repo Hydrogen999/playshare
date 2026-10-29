@@ -451,15 +451,41 @@ function addMessageToUI(m) {
   wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}`;
   
   // --- Reaction Gestures ---
+  let lastClickTime = 0;
+
+  // 🟢 DOUBLE-TAP / DOUBLE-CLICK FIX
+  wrap.addEventListener("click", (e) => {
+      // Ignore clicks on buttons (like "Join Match")
+      if (e.target.closest('button') || e.target.closest('a')) return;
+
+      const currentTime = new Date().getTime();
+      const timeDiff = currentTime - lastClickTime;
+
+      // If clicked twice within 350ms, it's a double-click!
+      if (timeDiff < 350 && timeDiff > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          showEmojiPicker(e, m.id);
+          lastClickTime = 0; 
+      } else {
+          lastClickTime = currentTime;
+      }
+  });
+
+  // Right-click for desktop
   wrap.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       showEmojiPicker(e, m.id);
   });
-  
+
+  // Long-press for mobile
   let pressTimer;
   wrap.addEventListener("touchstart", (e) => {
-      pressTimer = setTimeout(() => showEmojiPicker(e, m.id), 500);
+      const t = e.touches[0];
+      const pt = { clientX: t.clientX, clientY: t.clientY };
+      pressTimer = setTimeout(() => showEmojiPicker(pt, m.id), 500);
   }, { passive: true });
+  
   wrap.addEventListener("touchend", () => clearTimeout(pressTimer));
   wrap.addEventListener("touchmove", () => clearTimeout(pressTimer));
 
@@ -1198,6 +1224,27 @@ async function refreshAll() {
     if (requests.length > 0) { badge.textContent = String(requests.length); badge.classList.remove("hidden"); }
     else { badge.classList.add("hidden"); }
   }
+}
+
+// 🟢 RESTORED GAME CONNECTION FUNCTION
+function showChallengeModal(userId, username) {
+    if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) {
+        alert("Connecting to chat server... Please try again.");
+        return;
+    }
+    
+    // Generate a random room code for the match
+    const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    
+    // Send the game invite via WebSocket
+    dmSocket.send(JSON.stringify({ 
+        type: "dm:send", 
+        target_id: userId, 
+        content: `challenged you to a game!`, 
+        media_url: `challenge:game:${roomCode}` 
+    }));
+    
+    alert(`Challenge sent to ${username}!`);
 }
 
 async function boot() {
