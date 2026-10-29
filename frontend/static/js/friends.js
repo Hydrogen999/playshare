@@ -19,24 +19,7 @@ let isVideoCall = false;
 let isMuted = false;
 let callTimeout = null;
 let incomingCallModal = null;
-
-// --- TURN Servers for reliable connection on mobile data ---
-const ICE_SERVERS = {
-    iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-        {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        },
-        {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        }
-    ]
-};
+const STUN_SERVER = "stun:stun.l.google.com:19302";
 
 // --- Voice Note Variables ---
 let mediaRecorder = null;
@@ -108,6 +91,7 @@ function connectDMSocket() {
         document.querySelectorAll(".msg-status.mine").forEach(el => { el.textContent = "✓✓"; el.classList.add("text-cyan-400"); });
       }
     }
+    else if (msg.type === "dm:error") { alert(msg.error); }
     else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer, !!msg.is_video);
     else if (msg.type === "call:answer") {
       if (pc) { clearTimeout(callTimeout); pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); }
@@ -145,10 +129,10 @@ function closeChatPanel() {
   activeGroupId = null;
   $("chatMessages").innerHTML = "";
   $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400">Select a conversation</div>`;
-  $("chatForm").classList.add("hidden");
+  $("chatForm")?.classList.add("hidden");
   renderList();
 }
-$("mobileBack").addEventListener("click", closeChatPanel);
+$("mobileBack")?.addEventListener("click", closeChatPanel);
 
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -158,7 +142,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
 });
 
 let searchTimeout = null;
-$("searchInput").addEventListener("input", (e) => {
+$("searchInput")?.addEventListener("input", (e) => {
   clearTimeout(searchTimeout);
   const q = e.target.value.trim();
   if (!q) { searchResults = []; renderList(); return; }
@@ -167,6 +151,8 @@ $("searchInput").addEventListener("input", (e) => {
 
 function renderList() {
   const list = $("listArea");
+  if (!list) return;
+
   if (searchResults.length > 0 && $("searchInput").value.trim()) {
     list.innerHTML = searchResults.map((u) => {
       const rel = u.relationship;
@@ -303,15 +289,15 @@ async function openChat(userId, username, avatarId, isPremium) {
       </div>
     </div>`;
 
-  $("chatForm").classList.remove("hidden");
+  $("chatForm")?.classList.remove("hidden");
   await loadMessages();
 
   if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:seen", target_id: activeChatUserId }));
-  $("chatInput").focus();
+  $("chatInput")?.focus();
 
-  $("startAudioCallBtn").onclick = () => initiateCall(userId, false, username, avatarId, isPremium);
-  $("startVideoCallBtn").onclick = () => initiateCall(userId, true, username, avatarId, isPremium);
-  $("inviteGameBtn").onclick = () => showChallengeModal(userId, username);
+  if ($("startAudioCallBtn")) $("startAudioCallBtn").onclick = () => initiateCall(userId, false, username, avatarId, isPremium);
+  if ($("startVideoCallBtn")) $("startVideoCallBtn").onclick = () => initiateCall(userId, true, username, avatarId, isPremium);
+  if ($("inviteGameBtn")) $("inviteGameBtn").onclick = () => showChallengeModal(userId, username);
 }
 
 async function openGroupChat(groupId, groupName) {
@@ -325,7 +311,7 @@ async function openGroupChat(groupId, groupName) {
       <div class="text-sm font-bold text-slate-100">${escapeHTML(groupName)}</div>
     </div>`;
 
-  $("chatForm").classList.remove("hidden");
+  $("chatForm")?.classList.remove("hidden");
 
   try {
     const msgs = await api.request(`/api/v1/groups/${groupId}/messages`);
@@ -335,7 +321,7 @@ async function openGroupChat(groupId, groupName) {
     el.scrollTop = el.scrollHeight;
   } catch (err) { console.error(err); }
 
-  $("chatInput").focus();
+  $("chatInput")?.focus();
 }
 
 async function loadMessages() {
@@ -351,6 +337,8 @@ async function loadMessages() {
 
 function addMessageToUI(m) {
   const el = $("chatMessages");
+  if (!el) return;
+  
   const mine = m.sender_id === myId;
 
   const wrap = document.createElement("div");
@@ -382,15 +370,27 @@ function addMessageToUI(m) {
         </div>
       `;
   } 
+  else if (m.media_url && m.media_url.startsWith("gift:")) {
+      const amount = m.media_url.split(":")[1];
+      contentHtml = `
+        <div class="rounded-2xl border-2 border-amber-400 bg-gradient-to-br from-amber-500/20 to-slate-900 p-4 min-w-[200px] shadow-[0_0_20px_rgba(245,158,11,0.3)]">
+            <div class="text-center">
+                <span class="text-4xl drop-shadow-[0_0_10px_rgba(245,158,11,0.8)]">🎁</span>
+                <div class="text-amber-400 font-black text-2xl mt-1">${amount} PC</div>
+                <div class="text-[10px] text-slate-300 uppercase tracking-widest mt-1">${mine ? "Gift Sent" : "Gift Received"}</div>
+            </div>
+        </div>
+      `;
+  }
   else if (m.content && (m.content.includes("Missed audio call") || m.content.includes("Missed video call"))) {
     contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
   } 
-  else if (m.content) {
+  else if (m.content && (!m.media_url || !m.media_url.startsWith("gift:"))) {
     contentHtml = `<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>`;
   }
 
   let mediaHtml = "";
-  if (m.media_url && !m.media_url.startsWith("challenge:")) {
+  if (m.media_url && !m.media_url.startsWith("challenge:") && !m.media_url.startsWith("gift:")) {
     const safeUrl = escapeHTML(m.media_url);
     if (m.media_url.match(/\.(mp4|webm|ogg|mov|mp3|wav|m4a)$/i)) {
       mediaHtml = `<audio src="${safeUrl}" controls class="mt-2 w-48"></audio>`;
@@ -410,7 +410,7 @@ function addMessageToUI(m) {
   el.scrollTop = el.scrollHeight;
 }
 
-$("chatInput").addEventListener("input", () => {
+$("chatInput")?.addEventListener("input", () => {
   if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN || !activeChatUserId) return;
   const target = activeChatUserId;
   dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: target, is_typing: true }));
@@ -444,7 +444,7 @@ async function uploadMedia(file) {
   return data.url;
 }
 
-$("chatForm").addEventListener("submit", async (e) => {
+$("chatForm")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("chatInput").value.trim();
   if (!text || (!activeChatUserId && !activeGroupId)) return;
@@ -462,7 +462,7 @@ $("chatForm").addEventListener("submit", async (e) => {
   }
 });
 
-$("chatImageInput").addEventListener("change", async (e) => {
+$("chatImageInput")?.addEventListener("change", async (e) => {
   const file = e.target.files[0];
   const target = currentTarget();
   e.target.value = "";
@@ -476,55 +476,41 @@ $("chatImageInput").addEventListener("change", async (e) => {
   }
 });
 
-function showChallengeModal(targetId, targetName) {
+// --- COIN GIFT MODAL LOGIC ---
+$("giftBtn")?.addEventListener("click", () => {
+    if (!activeChatUserId) return; 
+    
     const modal = document.createElement("div");
     modal.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
     modal.innerHTML = `
-      <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl text-center">
-        <h3 class="text-white font-bold text-lg mb-4">Challenge ${escapeHTML(targetName)}</h3>
-        <div class="grid grid-cols-3 gap-2 mb-6">
-            <button data-game="ludo" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
-                <span class="text-2xl">🎯</span><span class="text-xs font-bold text-white">Ludo</span>
-            </button>
-            <button data-game="whot" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
-                <span class="text-2xl">🃏</span><span class="text-xs font-bold text-white">Whot</span>
-            </button>
-            <button data-game="chess" class="challenge-game-btn bg-slate-800 p-3 rounded-xl hover:bg-slate-700 transition flex flex-col items-center gap-1 border border-slate-700">
-                <span class="text-2xl">♟️</span><span class="text-xs font-bold text-white">Chess</span>
-            </button>
+      <div class="w-full max-w-xs bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl text-center">
+        <h3 class="text-white font-bold text-lg mb-2">Send PlayCoins 🪙</h3>
+        <p class="text-slate-400 text-xs mb-4">Support your friend with a gift!</p>
+        
+        <input type="number" id="giftAmountInput" min="1" placeholder="Amount (e.g. 50)" class="w-full bg-slate-800 text-white text-center text-xl font-bold rounded-lg p-3 mb-4 focus:outline-none border border-slate-700 focus:border-amber-400" />
+        
+        <div class="flex gap-2">
+          <button id="cancelGiftBtn" class="flex-1 py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
+          <button id="sendGiftBtn" class="flex-1 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold text-sm shadow-[0_0_15px_rgba(245,158,11,0.4)]">Send Gift</button>
         </div>
-        <button id="cancelChallengeBtn" class="w-full py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
       </div>
     `;
     document.body.appendChild(modal);
 
-    modal.querySelector("#cancelChallengeBtn").onclick = () => modal.remove();
-
-    modal.querySelectorAll(".challenge-game-btn").forEach(btn => {
-        btn.onclick = async () => {
-            const gameSlug = btn.dataset.game;
-            btn.innerHTML = `<span class="text-xs text-white">Creating...</span>`;
-            try {
-                const res = await api.createRoom({ game_slug: gameSlug, max_players: 2, is_public: false });
-                const gameName = gameSlug.charAt(0).toUpperCase() + gameSlug.slice(1);
-                dmSocket.send(JSON.stringify({
-                    type: "dm:challenge",
-                    target_id: targetId,
-                    content: `challenged you to ${gameName}!`,
-                    game_slug: gameSlug,
-                    room_code: res.id
-                }));
-                modal.remove();
-            } catch (err) {
-                alert("Failed to create game room: " + err.message);
-                btn.innerHTML = `<span class="text-xs font-bold text-white">${gameSlug}</span>`;
-            }
-        };
-    });
-}
+    modal.querySelector("#cancelGiftBtn").onclick = () => modal.remove();
+    modal.querySelector("#sendGiftBtn").onclick = () => {
+        const amount = parseInt(modal.querySelector("#giftAmountInput").value, 10);
+        if (isNaN(amount) || amount <= 0) return alert("Enter a valid amount");
+        
+        if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+            dmSocket.send(JSON.stringify({ type: "dm:gift", target_id: activeChatUserId, amount }));
+            modal.remove();
+        }
+    };
+});
 
 // --- CREATE GROUP MODAL LOGIC ---
-$("createGroupBtn").addEventListener("click", () => {
+$("createGroupBtn")?.addEventListener("click", () => {
   if (friends.length === 0) return alert("Add friends first to create a group.");
 
   const modal = document.createElement("div");
@@ -570,7 +556,7 @@ $("createGroupBtn").addEventListener("click", () => {
 });
 
 // --- VOICE NOTE LOGIC ---
-$("voiceNoteBtn").addEventListener("click", async () => {
+$("voiceNoteBtn")?.addEventListener("click", async () => {
   if (!activeChatUserId && !activeGroupId && !isRecording) return;
 
   if (isRecording) {
@@ -611,11 +597,10 @@ $("voiceNoteBtn").addEventListener("click", async () => {
 });
 
 // ---------------------------------------------------------
-// 4. WEBRTC CALLING SYSTEM (FIXED)
+// 4. WEBRTC CALLING SYSTEM
 // ---------------------------------------------------------
 function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   if ($("videoCallOverlay")) $("videoCallOverlay").remove();
-  
   const overlay = document.createElement("div");
   overlay.id = "videoCallOverlay";
   overlay.className = "fixed inset-0 z-[999] bg-[#0b141a] flex flex-col items-center justify-between";
@@ -631,7 +616,6 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     </div>
   `;
 
-  // The remote audio element is ALWAYS needed, even for video calls
   let audioHtml = `<audio id="remoteAudio" autoplay playsinline></audio>`;
 
   if (isVideo) {
@@ -667,14 +651,11 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   }
   document.body.appendChild(overlay);
 
-  // Force audio playback (mobile browsers block it sometimes)
   setTimeout(() => {
       const audioEl = $("remoteAudio");
       if (audioEl && remoteStream) {
           audioEl.srcObject = remoteStream;
           audioEl.play().catch(e => {
-              console.log("Autoplay blocked, showing unmute button", e);
-              // If blocked, show a prompt to tap the screen
               const prompt = document.createElement("div");
               prompt.className = "absolute inset-0 z-[9999] bg-black/80 flex items-center justify-center text-white font-bold text-lg cursor-pointer";
               prompt.textContent = "Tap to unmute";
@@ -686,7 +667,6 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
 
   $("btnEnd").onclick = endCall;
 
-  // Toggle Mute
   isMuted = false;
   $("btnMute").onclick = () => {
     if (localStream) {
@@ -700,35 +680,26 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     }
   };
 
-  // Toggle Video / Audio Mode
   $("btnToggleVideo").onclick = async () => {
       if (!localStream) return;
-      
       const videoTrack = localStream.getVideoTracks()[0];
       if (videoTrack) {
-          // Switch to Audio Only
           videoTrack.enabled = false;
           if ($("localVideo")) $("localVideo").style.display = "none";
           if ($("remoteVideo")) $("remoteVideo").style.display = "none";
           $("btnToggleVideo").textContent = "📹";
       } else {
-          // Switch to Video
           try {
               const stream = await navigator.mediaDevices.getUserMedia({ video: true });
               const newVideoTrack = stream.getVideoTracks()[0];
               localStream.addTrack(newVideoTrack);
-              
               if (pc) {
                   const senders = pc.getSenders();
                   const videoSender = senders.find(s => s.track && s.track.kind === 'video');
                   if (videoSender) videoSender.replaceTrack(newVideoTrack);
                   else pc.addTrack(newVideoTrack, localStream);
               }
-              
-              if ($("localVideo")) {
-                  $("localVideo").style.display = "block";
-                  $("localVideo").srcObject = localStream;
-              }
+              if ($("localVideo")) { $("localVideo").style.display = "block"; $("localVideo").srcObject = localStream; }
               if ($("remoteVideo")) $("remoteVideo").style.display = "block";
               $("btnToggleVideo").textContent = "📵";
           } catch (e) { alert("Camera access denied."); }
@@ -767,10 +738,8 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
     pc.ontrack = (event) => {
       if (!remoteStream) remoteStream = new MediaStream();
       remoteStream.addTrack(event.track);
-
       if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
       if ($("remoteAudio")) $("remoteAudio").srcObject = remoteStream;
-
       stopRingtone();
       startCallTimer();
     };
@@ -886,7 +855,6 @@ function showIncomingCall(senderId, offer, isVideo) {
   };
 }
 
-// --- RINGTONE ---
 let ringtoneCtx = null;
 let ringtoneInterval = null;
 
@@ -938,7 +906,7 @@ async function renderStories() {
   let bar = $("storyBar");
   if (!bar) {
     const listPanel = $("listPanel");
-    const searchDiv = listPanel.querySelector(".p-4.border-b");
+    const searchDiv = listPanel?.querySelector(".p-4.border-b");
     if (searchDiv) {
       bar = document.createElement("div");
       bar.id = "storyBar";
@@ -983,7 +951,7 @@ async function renderStories() {
     });
   });
 
-  $("addStatusBtn").addEventListener("click", showCreateStatusModal);
+  $("addStatusBtn")?.addEventListener("click", showCreateStatusModal);
 }
 
 function showStatusSlideshow(items) {
