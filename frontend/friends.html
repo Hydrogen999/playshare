@@ -86,20 +86,11 @@
 
         <div id="chatMessages" class="flex-1 overflow-y-auto p-4 chat-scroll space-y-3 relative z-0"></div>
 
-        <form id="chatForm" class="border-t border-brand-500/20 p-3 flex gap-2 bg-slate-950/80 backdrop-blur-lg hidden z-10 items-center">
+               <form id="chatForm" class="border-t border-brand-500/20 p-3 flex gap-2 bg-slate-950/80 backdrop-blur-lg hidden z-10 items-center">
           
-          <!-- NEW: Coin Gift Button -->
-          <button type="button" id="giftBtn" class="flex-shrink-0 p-2.5 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 transition group relative" title="Send Coins">
-            <span class="text-xl text-amber-400 group-hover:text-amber-300 transition">🎁</span>
-          </button>
-
-          <label class="cursor-pointer flex-shrink-0 p-2.5 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 transition group relative" title="Send Image">
-            <span class="text-xl text-slate-400 group-hover:text-cyber-cyan transition">📷</span>
-            <input type="file" id="chatImageInput" accept="image/*" class="hidden" />
-          </label>
-
-          <button type="button" id="voiceNoteBtn" class="flex-shrink-0 p-2.5 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 transition group relative" title="Record Voice Note">
-            <span class="text-xl text-slate-400 group-hover:text-cyber-pink transition" id="micIcon">🎤</span>
+          <!-- 🟢 NEW: Single Attachment Button -->
+          <button type="button" id="attachmentBtn" class="flex-shrink-0 p-2.5 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 transition group relative" title="Attach">
+            <span class="text-2xl text-brand-400 group-hover:text-brand-300 transition font-bold leading-none pb-1">+</span>
           </button>
 
           <input id="chatInput" type="text" maxlength="1000" placeholder="Type a message…"
