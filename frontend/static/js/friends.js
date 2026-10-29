@@ -464,13 +464,21 @@ function addMessageToUI(m) {
   el.scrollTop = el.scrollHeight;
 }
 
-// --- EMOJI PICKER LOGIC ---
+// --- EMOJI PICKER LOGIC (FIXED) ---
 function showEmojiPicker(e, messageId) {
     e.preventDefault();
     e.stopPropagation();
     
+    // Remove any existing pickers or backdrops
     document.querySelectorAll(".emoji-picker").forEach(el => el.remove());
+    document.querySelectorAll(".emoji-backdrop").forEach(el => el.remove());
 
+    // 1. Create a transparent backdrop that covers the screen
+    const backdrop = document.createElement("div");
+    backdrop.className = "emoji-backdrop fixed inset-0 z-[998] bg-transparent";
+    document.body.appendChild(backdrop);
+
+    // 2. Create the picker itself
     const picker = document.createElement("div");
     picker.className = "emoji-picker fixed z-[999] bg-slate-800 border border-slate-700 rounded-full shadow-2xl flex gap-1 p-1 animate-[pop_0.2s_ease-out]";
     
@@ -489,16 +497,18 @@ function showEmojiPicker(e, messageId) {
                 dmSocket.send(JSON.stringify({ type: "dm:react", message_id: messageId, emoji }));
             }
             picker.remove();
+            backdrop.remove();
         };
         picker.appendChild(btn);
     });
 
     document.body.appendChild(picker);
-
-    setTimeout(() => {
-        const closePicker = () => { picker.remove(); document.removeEventListener("click", closePicker); };
-        document.addEventListener("click", closePicker);
-    }, 10);
+    
+    // 3. If the user clicks the backdrop, close everything
+    backdrop.onclick = () => {
+        picker.remove();
+        backdrop.remove();
+    };
 }
 
 $("chatInput")?.addEventListener("input", () => {
