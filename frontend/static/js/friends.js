@@ -1,4 +1,3 @@
-
 import { api } from "./api.js";
 import { avatarHTML } from "./avatars.js";
 
@@ -20,7 +19,15 @@ let isVideoCall = false;
 let isMuted = false;
 let callTimeout = null;
 let incomingCallModal = null;
-const STUN_SERVER = "stun:stun.l.google.com:19302";
+
+const ICE_SERVERS = {
+    iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }
+    ]
+};
 
 // --- Voice Note Variables ---
 let mediaRecorder = null;
@@ -30,6 +37,9 @@ let recordingTarget = null;
 
 // --- Typing Timeout ---
 let typingTimeout = null;
+
+// --- Emoji Reactions ---
+const EMOJIS = ["❤️", "😂", "🔥", "👍", "😮", "😢"];
 
 const TAB_ACTIVE = "tab-btn flex-shrink-0 px-4 py-4 text-cyber-cyan border-b-2 border-cyber-cyan bg-cyber-cyan/5 transition";
 const TAB_IDLE = "tab-btn flex-shrink-0 px-4 py-4 text-slate-500 hover:text-slate-300 transition";
@@ -93,6 +103,41 @@ function connectDMSocket() {
       }
     }
     else if (msg.type === "dm:error") { alert(msg.error); }
+    else if (msg.type === "balance:update") {
+        const toast = document.createElement("div");
+        toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-amber-500 text-slate-900 px-6 py-3 rounded-full shadow-2xl font-bold animate-bounce flex items-center gap-2";
+        toast.innerHTML = `🪙 Balance updated: <b>${msg.new_balance} PC</b>`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
+        const balanceEl = document.getElementById("tokens"); 
+        if (balanceEl) balanceEl.textContent = msg.new_balance;
+    }
+    else if (msg.type === "dm:reaction") {
+        const msgWrap = document.querySelector(`[data-msg-id="${msg.message_id}"]`);
+        if (msgWrap) {
+            let reactBar = msgWrap.querySelector(".reaction-bar");
+            if (!reactBar && msg.action === "add") {
+                reactBar = document.createElement("div");
+                reactBar.className = "reaction-bar flex flex-wrap gap-1 mt-1 absolute -bottom-3 right-0 bg-slate-900 border border-slate-700 rounded-full px-2 py-0.5 shadow-lg z-10";
+                msgWrap.appendChild(reactBar);
+            }
+            
+            if (reactBar) {
+                if (msg.action === "add") {
+                    const span = document.createElement("span");
+                    span.className = "text-xs reaction-item";
+                    span.dataset.user = msg.user_id;
+                    span.dataset.emoji = msg.emoji;
+                    span.textContent = msg.emoji;
+                    reactBar.appendChild(span);
+                } else {
+                    const existing = reactBar.querySelector(`[data-user="${msg.user_id}"][data-emoji="${msg.emoji}"]`);
+                    if (existing) existing.remove();
+                }
+                if (reactBar.children.length === 0) reactBar.remove();
+            }
+        }
+    }
     else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer, !!msg.is_video);
     else if (msg.type === "call:answer") {
       if (pc) { clearTimeout(callTimeout); pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); }
@@ -343,7 +388,8 @@ function addMessageToUI(m) {
   const mine = m.sender_id === myId;
 
   const wrap = document.createElement("div");
-  wrap.className = mine ? "flex flex-col items-end mb-2" : "flex flex-col items-start mb-2";
+  wrap.className = `relative flex flex-col ${mine ? "items-end" : "items-start"} mb-2 chat-bubble`;
+  wrap.dataset.msgId = m.id;
 
   let senderHtml = "";
   if (m.group_id && !mine) {
@@ -356,18 +402,14 @@ function addMessageToUI(m) {
   let contentHtml = "";
   if (m.media_url && m.media_url.startsWith("challenge:")) {
       const parts = m.media_url.split(":");
-      const gameSlug = parts[1];
       const roomCode = parts[2];
-      const gameName = gameSlug.charAt(0).toUpperCase() + gameSlug.slice(1);
       contentHtml = `
         <div class="rounded-xl border-2 border-cyber-pink bg-slate-900 p-4 min-w-[220px] shadow-[0_0_20px_rgba(236,72,153,0.3)]">
             <div class="text-center mb-3">
                 <span class="text-3xl">⚔️</span>
                 <div class="text-white font-bold text-sm mt-1">${escapeHTML(m.content)}</div>
             </div>
-            <button onclick="window.location.href='/room?id=${roomCode}'" class="w-full bg-cyber-pink hover:bg-pink-500 text-white font-bold py-2 rounded-lg transition shadow-lg">
-                Join Match
-            </button>
+            <button onclick="window.location.href='/room?id=${roomCode}'" class="w-full bg-cyber-pink hover:bg-pink-500 text-white font-bold py-2 rounded-lg transition shadow-lg">Join Match</button>
         </div>
       `;
   } 
@@ -386,7 +428,7 @@ function addMessageToUI(m) {
   else if (m.content && (m.content.includes("Missed audio call") || m.content.includes("Missed video call"))) {
     contentHtml = `<div class="text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
   } 
-  else if (m.content && (!m.media_url || !m.media_url.startsWith("gift:"))) {
+  else if (m.content) {
     contentHtml = `<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm break-words ${mine ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-100"}">${escapeHTML(m.content)}</div>`;
   }
 
@@ -407,8 +449,56 @@ function addMessageToUI(m) {
   }
 
   wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}`;
+  
+  // --- NEW: Reaction Gestures ---
+  wrap.addEventListener("dblclick", (e) => showEmojiPicker(e, m.id));
+  
+  let pressTimer;
+  wrap.addEventListener("touchstart", (e) => {
+      pressTimer = setTimeout(() => showEmojiPicker(e, m.id), 500);
+  }, { passive: true });
+  wrap.addEventListener("touchend", () => clearTimeout(pressTimer));
+  wrap.addEventListener("touchmove", () => clearTimeout(pressTimer));
+
   el.appendChild(wrap);
   el.scrollTop = el.scrollHeight;
+}
+
+// --- EMOJI PICKER LOGIC ---
+function showEmojiPicker(e, messageId) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    document.querySelectorAll(".emoji-picker").forEach(el => el.remove());
+
+    const picker = document.createElement("div");
+    picker.className = "emoji-picker fixed z-[999] bg-slate-800 border border-slate-700 rounded-full shadow-2xl flex gap-1 p-1 animate-[pop_0.2s_ease-out]";
+    
+    const x = e.clientX || (e.touches && e.touches[0].clientX) || e.pageX;
+    const y = e.clientY || (e.touches && e.touches[0].clientY) || e.pageY;
+    picker.style.left = `${x - 100}px`;
+    picker.style.top = `${y - 50}px`;
+
+    EMOJIS.forEach(emoji => {
+        const btn = document.createElement("button");
+        btn.className = "text-2xl hover:scale-125 transition p-1";
+        btn.textContent = emoji;
+        btn.onclick = (ev) => {
+            ev.stopPropagation();
+            if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+                dmSocket.send(JSON.stringify({ type: "dm:react", message_id: messageId, emoji }));
+            }
+            picker.remove();
+        };
+        picker.appendChild(btn);
+    });
+
+    document.body.appendChild(picker);
+
+    setTimeout(() => {
+        const closePicker = () => { picker.remove(); document.removeEventListener("click", closePicker); };
+        document.addEventListener("click", closePicker);
+    }, 10);
 }
 
 $("chatInput")?.addEventListener("input", () => {
@@ -419,9 +509,7 @@ $("chatInput")?.addEventListener("input", () => {
   typingTimeout = setTimeout(() => { if (dmSocket && dmSocket.readyState === WebSocket.OPEN) dmSocket.send(JSON.stringify({ type: "dm:typing", target_id: target, is_typing: false })); }, 2000);
 });
 
-function currentTarget() {
-  return { groupId: activeGroupId, userId: activeChatUserId };
-}
+function currentTarget() { return { groupId: activeGroupId, userId: activeChatUserId }; }
 
 function sendToTarget(target, { content = "", media_url = null }) {
   if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) throw new Error("Not connected");
@@ -625,7 +713,6 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
       <video id="remoteVideo" autoplay playsinline class="absolute inset-0 w-full h-full object-cover z-0"></video>
       ${header}
       <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-slate-700 shadow-2xl z-20 transition-all"></video>
-      
       <div class="relative z-10 mb-8 bg-[#1f2c33]/90 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-6 shadow-2xl">
         <button id="btnToggleVideo" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">📹</button>
         <button id="btnMute" class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-white text-xl">🎤</button>
