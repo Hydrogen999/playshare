@@ -450,8 +450,11 @@ function addMessageToUI(m) {
 
   wrap.innerHTML = `${senderHtml}${replyHtml}${contentHtml}${mediaHtml}${statusHtml}`;
   
-  // --- NEW: Reaction Gestures ---
-  wrap.addEventListener("dblclick", (e) => showEmojiPicker(e, m.id));
+  // --- Reaction Gestures ---
+  wrap.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      showEmojiPicker(e, m.id);
+  });
   
   let pressTimer;
   wrap.addEventListener("touchstart", (e) => {
@@ -464,21 +467,18 @@ function addMessageToUI(m) {
   el.scrollTop = el.scrollHeight;
 }
 
-// --- EMOJI PICKER LOGIC (FIXED) ---
+// --- EMOJI PICKER LOGIC ---
 function showEmojiPicker(e, messageId) {
     e.preventDefault();
     e.stopPropagation();
     
-    // Remove any existing pickers or backdrops
     document.querySelectorAll(".emoji-picker").forEach(el => el.remove());
     document.querySelectorAll(".emoji-backdrop").forEach(el => el.remove());
 
-    // 1. Create a transparent backdrop that covers the screen
     const backdrop = document.createElement("div");
     backdrop.className = "emoji-backdrop fixed inset-0 z-[998] bg-transparent";
     document.body.appendChild(backdrop);
 
-    // 2. Create the picker itself
     const picker = document.createElement("div");
     picker.className = "emoji-picker fixed z-[999] bg-slate-800 border border-slate-700 rounded-full shadow-2xl flex gap-1 p-1 animate-[pop_0.2s_ease-out]";
     
@@ -489,26 +489,28 @@ function showEmojiPicker(e, messageId) {
 
     EMOJIS.forEach(emoji => {
         const btn = document.createElement("button");
-        btn.className = "text-2xl hover:scale-125 transition p-1";
+        btn.className = "text-2xl hover:scale-125 transition p-1 select-none";
         btn.textContent = emoji;
-        btn.onclick = (ev) => {
+        
+        // Use pointerdown so it fires instantly and doesn't get canceled
+        btn.addEventListener("pointerdown", (ev) => {
+            ev.preventDefault();
             ev.stopPropagation();
             if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
                 dmSocket.send(JSON.stringify({ type: "dm:react", message_id: messageId, emoji }));
             }
             picker.remove();
             backdrop.remove();
-        };
+        });
         picker.appendChild(btn);
     });
 
     document.body.appendChild(picker);
     
-    // 3. If the user clicks the backdrop, close everything
-    backdrop.onclick = () => {
+    backdrop.addEventListener("pointerdown", () => {
         picker.remove();
         backdrop.remove();
-    };
+    });
 }
 
 $("chatInput")?.addEventListener("input", () => {
