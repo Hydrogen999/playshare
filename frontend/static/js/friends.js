@@ -19,7 +19,15 @@ let isVideoCall = false;
 let isMuted = false;
 let callTimeout = null;
 let incomingCallModal = null;
-const STUN_SERVER = "stun:stun.l.google.com:19302";
+
+const ICE_SERVERS = {
+    iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }
+    ]
+};
 
 // --- Voice Note Variables ---
 let mediaRecorder = null;
@@ -456,29 +464,20 @@ function addMessageToUI(m) {
   el.scrollTop = el.scrollHeight;
 }
 
-// --- EMOJI PICKER LOGIC (FIXED) ---
+// --- EMOJI PICKER LOGIC ---
 function showEmojiPicker(e, messageId) {
     e.preventDefault();
     e.stopPropagation();
     
-    // Remove any existing pickers or backdrops
     document.querySelectorAll(".emoji-picker").forEach(el => el.remove());
-    document.querySelectorAll(".emoji-backdrop").forEach(el => el.remove());
 
-    // 1. Create a transparent backdrop that covers the screen
-    const backdrop = document.createElement("div");
-    backdrop.className = "emoji-backdrop fixed inset-0 z-[998] bg-transparent";
-    document.body.appendChild(backdrop);
-
-    // 2. Create the picker itself
     const picker = document.createElement("div");
     picker.className = "emoji-picker fixed z-[999] bg-slate-800 border border-slate-700 rounded-full shadow-2xl flex gap-1 p-1 animate-[pop_0.2s_ease-out]";
     
-    // Position the picker
-    const x = e.clientX || (e.touches && e.touches[0].clientX) || e.pageX || 0;
-    const y = e.clientY || (e.touches && e.touches[0].clientY) || e.pageY || 0;
-    picker.style.left = `${Math.max(10, x - 100)}px`;
-    picker.style.top = `${Math.max(10, y - 60)}px`;
+    const x = e.clientX || (e.touches && e.touches[0].clientX) || e.pageX;
+    const y = e.clientY || (e.touches && e.touches[0].clientY) || e.pageY;
+    picker.style.left = `${x - 100}px`;
+    picker.style.top = `${y - 50}px`;
 
     EMOJIS.forEach(emoji => {
         const btn = document.createElement("button");
@@ -490,18 +489,16 @@ function showEmojiPicker(e, messageId) {
                 dmSocket.send(JSON.stringify({ type: "dm:react", message_id: messageId, emoji }));
             }
             picker.remove();
-            backdrop.remove();
         };
         picker.appendChild(btn);
     });
 
     document.body.appendChild(picker);
-    
-    // 3. If the user clicks the backdrop, close everything
-    backdrop.onclick = () => {
-        picker.remove();
-        backdrop.remove();
-    };
+
+    setTimeout(() => {
+        const closePicker = () => { picker.remove(); document.removeEventListener("click", closePicker); };
+        document.addEventListener("click", closePicker);
+    }, 10);
 }
 
 $("chatInput")?.addEventListener("input", () => {
@@ -646,6 +643,91 @@ $("createGroupBtn")?.addEventListener("click", () => {
     }
   };
 });
+
+// --- GAME CHALLENGE MODAL ---
+async function showChallengeModal(userId, username) {
+  const games = [
+    { slug: "ludo",  name: "Ludo",  icon: "🎲", max: 2 },
+    { slug: "chess", name: "Chess", icon: "♟️", max: 2 },
+    { slug: "whot",  name: "Whot",  icon: "🃏", max: 2 },
+  ];
+
+  const modal = document.createElement("div");
+  modal.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
+  modal.innerHTML = `
+    <div class="w-full max-w-sm bg-slate-900 rounded-2xl p-5 border border-cyber-pink/50 shadow-[0_0_40px_rgba(236,72,153,0.3)]">
+      <h3 class="text-white font-bold text-lg mb-1">Challenge ${escapeHTML(username)} ⚔️</h3>
+      <p class="text-slate-400 text-xs mb-4">Pick a game — we'll create a private room and send the invite.</p>
+
+      <div class="grid grid-cols-3 gap-2 mb-4">
+        ${games.map(g => `
+          <button data-game="${g.slug}" data-name="${g.name}" data-max="${g.max}"
+            class="game-pick-btn flex flex-col items-center gap-1 p-3 rounded-xl bg-slate-800 border-2 border-slate-700 hover:border-cyber-pink transition">
+            <span class="text-2xl">${g.icon}</span>
+            <span class="text-[10px] text-white font-bold">${escapeHTML(g.name)}</span>
+          </button>
+        `).join("")}
+      </div>
+
+      <label class="block text-[10px] text-slate-400 uppercase tracking-wider mb-1">Wager (optional, PlayCoins)</label>
+      <input type="number" id="challengeWager" min="0" max="10000" value="0" placeholder="0"
+        class="w-full bg-slate-800 text-white text-center text-sm font-bold rounded-lg p-2.5 mb-4 focus:outline-none border border-slate-700 focus:border-cyber-pink" />
+
+      <button id="cancelChallengeBtn" class="w-full py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("#cancelChallengeBtn").onclick = () => modal.remove();
+
+  modal.querySelectorAll(".game-pick-btn").forEach(btn => {
+    btn.onclick = async () => {
+      const gameSlug = btn.dataset.game;
+      const gameName = btn.dataset.name;
+      const maxPlayers = parseInt(btn.dataset.max, 10) || 2;
+      const wagerInput = modal.querySelector("#challengeWager");
+      let wager = parseInt(wagerInput.value, 10);
+      if (isNaN(wager) || wager < 0) wager = 0;
+      if (wager > 10000) wager = 10000;
+
+      btn.disabled = true;
+      btn.classList.add("opacity-50");
+
+      try {
+        // 1. Create a private room
+        const room = await api.request("/api/v1/rooms", {
+          method: "POST",
+          body: { game_slug: gameSlug, max_players: maxPlayers, wager, is_public: false }
+        });
+        const roomCode = room.code;
+        if (!roomCode) throw new Error("No room code returned from server");
+
+        // 2. Send the challenge over the DM socket
+        if (!dmSocket || dmSocket.readyState !== WebSocket.OPEN) {
+          throw new Error("Chat socket not connected — wait a second and try again");
+        }
+        dmSocket.send(JSON.stringify({
+          type: "dm:challenge",
+          target_id: userId,
+          content: `invited you to play ${gameName}${wager > 0 ? ` for ${wager} PC` : ""}!`,
+          game_slug: gameSlug,
+          room_code: roomCode
+        }));
+
+        modal.remove();
+
+        const toast = document.createElement("div");
+        toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-cyber-pink text-white px-6 py-3 rounded-full shadow-2xl font-bold animate-bounce";
+        toast.textContent = `⚔️ Challenge sent to ${username}!`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+      } catch (err) {
+        alert("Could not send challenge: " + err.message);
+        btn.disabled = false;
+        btn.classList.remove("opacity-50");
+      }
+    };
+  });
+}
 
 // --- VOICE NOTE LOGIC ---
 $("voiceNoteBtn")?.addEventListener("click", async () => {
