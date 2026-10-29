@@ -450,6 +450,7 @@ async def room_ws(
                 except Exception:
                     chess_state["board"] = None
             elif pending.game_slug == "whot":
+                # Send secure state to frontend. If spectator, hide both hands.
                 viewer = "spectator" if spectator else user_id
                 whot_state = whot_state_to_dict(_load_whot_state(pending), viewer)
     finally:
@@ -472,7 +473,7 @@ async def room_ws(
     await ws.send_text(json.dumps({
         "type": "room:init",
         "you": user_id,
-        "is_spectator": spectator,
+        "is_spectator": spectator, # <-- Tell frontend they are watching
         "reconnect_token": issue_token,
         "room": room_meta,
         "members": members_payload,
@@ -512,6 +513,7 @@ async def room_ws(
                 await ws.send_text(json.dumps({"type": "pong"}))
                 continue
                 
+            # Spectators can only chat
             if spectator and mtype != "chat:send":
                 continue
 
@@ -647,6 +649,7 @@ async def room_ws(
                                     await hub.send_to_user(room_id, member.user_id, {
                                         "type": "whot:start", "match_id": m5.id, "wager": m5.wager, "state": state_dict
                                     })
+                                # Send start to spectators
                                 spec_state = whot_state_to_dict(_load_whot_state(m5), "spectator")
                                 for spec_id in hub.spectators.get(room_id, set()):
                                     await hub.send_to_user(room_id, spec_id, {
@@ -872,6 +875,7 @@ async def room_ws(
                             "type": "whot:played", "user_id": user_id, "state": state_dict
                         })
                     
+                    # Send to spectators
                     spec_state = whot_state_to_dict(state, "spectator")
                     for spec_id in hub.spectators.get(room_id, set()):
                         await hub.send_to_user(room_id, spec_id, {
@@ -906,6 +910,7 @@ async def room_ws(
                             "type": "whot:played", "user_id": user_id, "state": state_dict
                         })
 
+                    # Send to spectators
                     spec_state = whot_state_to_dict(state, "spectator")
                     for spec_id in hub.spectators.get(room_id, set()):
                         await hub.send_to_user(room_id, spec_id, {
