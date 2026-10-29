@@ -69,14 +69,12 @@ function connectDMSocket() {
   dmSocket.addEventListener("message", async (ev) => {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
 
-    // 🟢 Handle Presence Updates
     if (msg.type === "presence:update") {
         const friend = friends.find(f => String(f.id) === String(msg.user_id));
         if (friend) {
             friend.is_online = (msg.status === "online");
             friend.last_seen = msg.last_seen;
             renderList();
-            
             if (String(activeChatUserId) === String(msg.user_id)) {
                 updateChatHeaderStatus(friend.username, friend.avatar_id, friend.is_premium, friend.is_online, friend.last_seen);
             }
@@ -207,7 +205,6 @@ function timeAgo(iso) {
 function escapeHTML(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function crownMark(isPremium) { return isPremium ? ' <span class="text-amber-400 text-xs">👑</span>' : ""; }
 
-// 🟢 Helper to update the Chat Header
 function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSeen) {
     let statusHtml = "";
     if (isOnline) {
@@ -234,18 +231,16 @@ function updateChatHeaderStatus(username, avatarId, isPremium, isOnline, lastSee
         </div>
       </div>`;
 
-    // 🟢 Attach Search listener
     if ($("searchChatBtn")) {
         $("searchChatBtn").onclick = toggleSearchUI;
     }
 }
 
-// 🟢 New function to toggle the Search Bar
 function toggleSearchUI() {
     let searchBar = $("chatSearchBar");
     if (searchBar) {
         searchBar.remove();
-        loadMessages(); // Reset chat to normal
+        loadMessages(); 
         return;
     }
 
@@ -257,7 +252,6 @@ function toggleSearchUI() {
         <button id="closeSearchBtn" class="text-slate-400 hover:text-white font-bold px-2">✕</button>
     `;
     
-    // Insert after header
     const header = $("chatHeader");
     header.after(searchBar);
     $("chatSearchInput").focus();
@@ -271,7 +265,6 @@ function toggleSearchUI() {
             return;
         }
         
-        // Filter messages in real-time
         const msgs = await api.getConversation(activeChatUserId);
         const filtered = msgs.filter(m => m.content && m.content.toLowerCase().includes(query));
         
@@ -292,7 +285,7 @@ function closeChatPanel() {
   document.body.classList.remove("chat-open");
   activeChatUserId = null;
   activeGroupId = null;
-  $("chatSearchBar")?.remove(); // Clean up search bar
+  $("chatSearchBar")?.remove(); 
   $("chatMessages").innerHTML = "";
   $("chatHeaderContent").innerHTML = `<div class="text-sm text-slate-400">Select a conversation</div>`;
   $("chatForm")?.classList.add("hidden");
@@ -496,7 +489,6 @@ async function loadMessages() {
   } catch (err) { console.error(err); }
 }
 
-// 🟢 Added optional `highlightQuery` parameter for search
 function addMessageToUI(m, highlightQuery = null) {
   const el = $("chatMessages");
   if (!el) return;
@@ -549,7 +541,6 @@ function addMessageToUI(m, highlightQuery = null) {
     contentHtml = `<div class="message-content text-sm font-bold text-red-400 flex items-center gap-2"><span>📞</span> ${escapeHTML(m.content)}</div>`;
   } 
   else if (m.content) {
-    // 🟢 HIGHLIGHT LOGIC
     let renderedContent = escapeHTML(m.content);
     if (highlightQuery) {
         const regex = new RegExp(`(${highlightQuery})`, "gi");
@@ -711,49 +702,119 @@ $("chatForm")?.addEventListener("submit", async (e) => {
   }
 });
 
-$("chatImageInput")?.addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  const target = currentTarget();
-  e.target.value = "";
-  if (!file || (!target.userId && !target.groupId)) return;
+// 🟢 NEW: ATTACHMENT MENU LOGIC
+$("attachmentBtn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.querySelectorAll(".attachment-menu").forEach(el => el.remove());
 
-  try {
-    const url = await uploadMedia(file);
-    sendToTarget(target, { media_url: url });
-  } catch (err) {
-    alert("Could not upload image.");
-  }
-});
-
-// --- COIN GIFT MODAL LOGIC ---
-$("giftBtn")?.addEventListener("click", () => {
-    if (!activeChatUserId) return; 
+    const menu = document.createElement("div");
+    menu.className = "attachment-menu absolute bottom-full mb-3 left-0 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 w-48 flex flex-col gap-1 z-[100] animate-[slideUp_0.2s_ease-out]";
     
-    const modal = document.createElement("div");
-    modal.className = "fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4";
-    modal.innerHTML = `
-      <div class="w-full max-w-xs bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl text-center">
-        <h3 class="text-white font-bold text-lg mb-2">Send PlayCoins 🪙</h3>
-        <p class="text-slate-400 text-xs mb-4">Support your friend with a gift!</p>
-        
-        <input type="number" id="giftAmountInput" min="1" placeholder="Amount (e.g. 50)" class="w-full bg-slate-800 text-white text-center text-xl font-bold rounded-lg p-3 mb-4 focus:outline-none border border-slate-700 focus:border-amber-400" />
-        
-        <div class="flex gap-2">
-          <button id="cancelGiftBtn" class="flex-1 py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
-          <button id="sendGiftBtn" class="flex-1 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold text-sm shadow-[0_0_15px_rgba(245,158,11,0.4)]">Send Gift</button>
-        </div>
-      </div>
+    menu.innerHTML = `
+        <button id="menuImage" class="flex items-center gap-3 w-full p-2.5 hover:bg-slate-800 rounded-xl transition text-left">
+            <span class="text-xl">🖼️</span> <span class="text-sm text-slate-200 font-bold">Photo</span>
+        </button>
+        <button id="menuGift" class="flex items-center gap-3 w-full p-2.5 hover:bg-slate-800 rounded-xl transition text-left">
+            <span class="text-xl">🎁</span> <span class="text-sm text-slate-200 font-bold">Send Coins</span>
+        </button>
+        <button id="menuVoice" class="flex items-center gap-3 w-full p-2.5 hover:bg-slate-800 rounded-xl transition text-left">
+            <span class="text-xl">🎤</span> <span class="text-sm text-slate-200 font-bold">Voice Note</span>
+        </button>
     `;
-    document.body.appendChild(modal);
+    
+    // Find the form container and append the menu relative to the button
+    const form = $("chatForm");
+    form.style.position = "relative";
+    form.appendChild(menu);
 
-    modal.querySelector("#cancelGiftBtn").onclick = () => modal.remove();
-    modal.querySelector("#sendGiftBtn").onclick = () => {
-        const amount = parseInt(modal.querySelector("#giftAmountInput").value, 10);
-        if (isNaN(amount) || amount <= 0) return alert("Enter a valid amount");
-        
-        if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
-            dmSocket.send(JSON.stringify({ type: "dm:gift", target_id: activeChatUserId, amount }));
-            modal.remove();
+    // Close menu when clicking outside
+    setTimeout(() => {
+        const closeMenu = () => { menu.remove(); document.removeEventListener("click", closeMenu); };
+        document.addEventListener("click", closeMenu);
+    }, 10);
+
+    // Handle Image Upload
+    menu.querySelector("#menuImage").onclick = () => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.onchange = async (ev) => {
+            const file = ev.target.files[0];
+            if (!file) return;
+            try {
+                const url = await uploadMedia(file);
+                sendToTarget(currentTarget(), { media_url: url });
+            } catch (err) { alert("Could not upload image."); }
+        };
+        input.click();
+    };
+
+    // Handle Gift Modal
+    menu.querySelector("#menuGift").onclick = () => {
+        if (!activeChatUserId) return alert("Can only send coins in private chats.");
+        const modal = document.createElement("div");
+        modal.className = "fixed inset-0 z-[999] bg-black/90 flex flex-col items-center justify-center p-4";
+        modal.innerHTML = `
+          <div class="w-full max-w-xs bg-slate-900 rounded-2xl p-5 border border-slate-700 shadow-2xl text-center">
+            <h3 class="text-white font-bold text-lg mb-2">Send PlayCoins 🪙</h3>
+            <p class="text-slate-400 text-xs mb-4">Support your friend with a gift!</p>
+            <input type="number" id="giftAmountInput" min="1" placeholder="Amount (e.g. 50)" class="w-full bg-slate-800 text-white text-center text-xl font-bold rounded-lg p-3 mb-4 focus:outline-none border border-slate-700 focus:border-amber-400" />
+            <div class="flex gap-2">
+              <button id="cancelGiftBtn" class="flex-1 py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm">Cancel</button>
+              <button id="sendGiftBtn" class="flex-1 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold text-sm shadow-[0_0_15px_rgba(245,158,11,0.4)]">Send Gift</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+        modal.querySelector("#cancelGiftBtn").onclick = () => modal.remove();
+        modal.querySelector("#sendGiftBtn").onclick = () => {
+            const amount = parseInt(modal.querySelector("#giftAmountInput").value, 10);
+            if (isNaN(amount) || amount <= 0) return alert("Enter a valid amount");
+            if (dmSocket && dmSocket.readyState === WebSocket.OPEN) {
+                dmSocket.send(JSON.stringify({ type: "dm:gift", target_id: activeChatUserId, amount }));
+                modal.remove();
+            }
+        };
+    };
+
+    // Handle Voice Note
+    menu.querySelector("#menuVoice").onclick = async () => {
+        if (isRecording) return;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            recordingTarget = currentTarget();
+
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            mediaRecorder.onstop = async () => {
+                stream.getTracks().forEach(t => t.stop());
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                const file = new File([audioBlob], "voice_note.webm", { type: "audio/webm" });
+                try {
+                    const url = await uploadMedia(file);
+                    sendToTarget(recordingTarget, { media_url: url });
+                } catch (err) {
+                    alert("Could not upload voice note.");
+                }
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            
+            // Show a temporary recording toast
+            const toast = document.createElement("div");
+            toast.id = "recordingToast";
+            toast.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[999] bg-red-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold flex items-center gap-2 cursor-pointer animate-pulse";
+            toast.innerHTML = `⏹️ Recording... Tap to stop`;
+            toast.onclick = () => {
+                mediaRecorder.stop();
+                isRecording = false;
+                toast.remove();
+            };
+            document.body.appendChild(toast);
+        } catch (err) {
+            alert("Microphone access denied. Check browser permissions.");
         }
     };
 });
@@ -886,47 +947,6 @@ async function showChallengeModal(userId, username) {
     };
   });
 }
-
-// --- VOICE NOTE LOGIC ---
-$("voiceNoteBtn")?.addEventListener("click", async () => {
-  if (!activeChatUserId && !activeGroupId && !isRecording) return;
-
-  if (isRecording) {
-    mediaRecorder.stop();
-    isRecording = false;
-    $("micIcon").textContent = "🎤";
-    $("micIcon").classList.remove("text-red-500", "animate-pulse");
-  } else {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
-      recordingTarget = currentTarget();
-
-      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const target = recordingTarget;
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const file = new File([audioBlob], "voice_note.webm", { type: "audio/webm" });
-
-        try {
-          const url = await uploadMedia(file);
-          sendToTarget(target, { media_url: url });
-        } catch (err) {
-          alert("Could not upload voice note.");
-        }
-      };
-
-      mediaRecorder.start();
-      isRecording = true;
-      $("micIcon").textContent = "⏹️";
-      $("micIcon").classList.add("text-red-500", "animate-pulse");
-    } catch (err) {
-      alert("Microphone access denied. Check browser permissions.");
-    }
-  }
-});
 
 // ---------------------------------------------------------
 // 4. WEBRTC CALLING SYSTEM
