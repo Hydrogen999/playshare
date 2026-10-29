@@ -20,7 +20,7 @@ let isMuted = false;
 let callTimeout = null;
 let incomingCallModal = null;
 
-// 🟢 FREE STUN SERVERS (No account needed)
+// 🟢 Using Cloudflare STUN (Free, no account needed)
 const ICE_SERVERS = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
@@ -125,7 +125,7 @@ function connectDMSocket() {
             if (reactBar) {
                 if (msg.action === "add") {
                     const existing = reactBar.querySelector(`[data-user="${msg.user_id}"]`);
-                    if (existing) existing.remove(); // Remove old emoji from same user
+                    if (existing) existing.remove();
                     
                     const span = document.createElement("span");
                     span.className = "text-xs reaction-item";
@@ -143,9 +143,17 @@ function connectDMSocket() {
     }
     else if (msg.type === "call:offer") showIncomingCall(msg.sender_id, msg.offer, !!msg.is_video);
     else if (msg.type === "call:answer") {
-      if (pc) { clearTimeout(callTimeout); pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); }
+      if (pc) { 
+          clearTimeout(callTimeout); 
+          pc.setRemoteDescription(new RTCSessionDescription(msg.answer))
+            .catch(e => console.error("Error setting remote desc:", e)); 
+      }
     }
-    else if (msg.type === "call:ice-candidate") { if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); }
+    else if (msg.type === "call:ice-candidate") { 
+        if (pc && msg.candidate) {
+            pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(e => console.error("Error adding ICE:", e)); 
+        }
+    }
     else if (msg.type === "call:end") endCall();
     else if (msg.type === "call:reject") {
       if (currentCallTargetId) alert("Call was declined.");
@@ -790,11 +798,25 @@ $("voiceNoteBtn")?.addEventListener("click", async () => {
 // ---------------------------------------------------------
 // 4. WEBRTC CALLING SYSTEM
 // ---------------------------------------------------------
+function addDebugLog(text) {
+    let debugBox = $("webrtcDebugBox");
+    if (!debugBox) {
+        debugBox = document.createElement("div");
+        debugBox.id = "webrtcDebugBox";
+        debugBox.className = "fixed top-2 left-2 z-[9999] bg-black/80 text-white text-[10px] p-2 rounded max-w-xs font-mono pointer-events-none whitespace-pre-wrap";
+        document.body.appendChild(debugBox);
+    }
+    debugBox.textContent += text + "\n";
+}
+
 function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   if ($("videoCallOverlay")) $("videoCallOverlay").remove();
   const overlay = document.createElement("div");
   overlay.id = "videoCallOverlay";
   overlay.className = "fixed inset-0 z-[999] bg-[#0b141a] flex flex-col items-center justify-between";
+
+  // 🟢 THE DEBUG BOX
+  addDebugLog("Overlay created. Waiting for stream...");
 
   const header = `
     <div class="relative z-10 w-full p-6 flex justify-between items-center">
@@ -807,11 +829,15 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     </div>
   `;
 
-  let audioHtml = `<audio id="remoteAudio" autoplay playsinline></audio>`;
+  // 🟢 We append the audio element directly to document.body so it never gets destroyed
+  let audioEl = document.createElement("audio");
+  audioEl.id = "globalRemoteAudio";
+  audioEl.autoplay = true;
+  audioEl.playsInline = true;
+  document.body.appendChild(audioEl);
 
   if (isVideo) {
     overlay.innerHTML = `
-      ${audioHtml}
       <video id="remoteVideo" autoplay playsinline class="absolute inset-0 w-full h-full object-cover z-0"></video>
       ${header}
       <video id="localVideo" autoplay playsinline muted class="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-slate-700 shadow-2xl z-20 transition-all"></video>
@@ -823,7 +849,6 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
     `;
   } else {
     overlay.innerHTML = `
-      ${audioHtml}
       <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
       ${header}
       <div class="relative z-10 flex-1 flex flex-col items-center justify-center">
@@ -842,13 +867,13 @@ function createVideoOverlay(isVideo, targetName, targetAvatar, isPremium) {
   document.body.appendChild(overlay);
 
   setTimeout(() => {
-      const audioEl = $("remoteAudio");
-      if (audioEl && remoteStream) {
+      if (remoteStream) {
           audioEl.srcObject = remoteStream;
-          audioEl.play().catch(e => {
+          audioEl.play().then(() => addDebugLog("Audio playing successfully")).catch(e => {
+              addDebugLog("Autoplay blocked! User must click.");
               const prompt = document.createElement("div");
               prompt.className = "absolute inset-0 z-[9999] bg-black/80 flex items-center justify-center text-white font-bold text-lg cursor-pointer";
-              prompt.textContent = "Tap to unmute";
+              prompt.textContent = "🔊 TAP TO UNMUTE";
               prompt.onclick = () => { audioEl.play(); prompt.remove(); };
               overlay.appendChild(prompt);
           });
@@ -923,14 +948,21 @@ async function initiateCall(targetId, isVideo, targetName, targetAvatar, isPremi
     if ($("localVideo")) $("localVideo").srcObject = localStream;
 
     pc = new RTCPeerConnection(ICE_SERVERS);
+    
+    // 🟢 CONNECTION STATE LOGGER
+    pc.oniceconnectionstatechange = () => {
+        addDebugLog("ICE State: " + pc.iceConnectionState);
+    };
+
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     pc.ontrack = (event) => {
+      addDebugLog("Track received: " + event.track.kind);
       if (!remoteStream) remoteStream = new MediaStream();
       remoteStream.addTrack(event.track);
       if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
       
-      const audioEl = $("remoteAudio");
+      const audioEl = $("globalRemoteAudio");
       if (audioEl) { 
           audioEl.srcObject = remoteStream; 
           audioEl.play().catch(e => console.log("Autoplay blocked", e)); 
@@ -1021,14 +1053,21 @@ function showIncomingCall(senderId, offer, isVideo) {
       if ($("localVideo")) $("localVideo").srcObject = localStream;
 
       pc = new RTCPeerConnection(ICE_SERVERS);
+      
+      // 🟢 CONNECTION STATE LOGGER
+      pc.oniceconnectionstatechange = () => {
+          addDebugLog("ICE State: " + pc.iceConnectionState);
+      };
+
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
       pc.ontrack = (event) => {
+        addDebugLog("Track received: " + event.track.kind);
         if (!remoteStream) remoteStream = new MediaStream();
         remoteStream.addTrack(event.track);
         if ($("remoteVideo")) $("remoteVideo").srcObject = remoteStream;
         
-        const audioEl = $("remoteAudio");
+        const audioEl = $("globalRemoteAudio");
         if (audioEl) { 
             audioEl.srcObject = remoteStream; 
             audioEl.play().catch(e => console.log("Autoplay blocked", e)); 
@@ -1096,6 +1135,14 @@ function endCall() {
   }
   const overlay = $("videoCallOverlay");
   if (overlay) overlay.remove();
+  
+  // 🟢 Cleanup global audio element
+  const audioEl = $("globalRemoteAudio");
+  if (audioEl) audioEl.remove();
+  
+  const debugBox = $("webrtcDebugBox");
+  if (debugBox) debugBox.remove();
+
   currentCallTargetId = null;
 }
 
