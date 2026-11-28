@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>PlaySphere — Where players meet, chat, and compete</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: { brand: { 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6' } },
+        fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+      },
+    },
+  };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+
+  <div class="pointer-events-none fixed inset-0 overflow-hidden">
+    <div class="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-brand-700/30 blur-3xl"></div>
+    <div class="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-fuchsia-700/20 blur-3xl"></div>
+  </div>
+
+  <div class="relative">
+    <header class="mx-auto max-w-6xl px-4 sm:px-6 py-4 sm:py-6 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="h-9 w-9 rounded-xl bg-brand-600 grid place-items-center font-extrabold">P</div>
+       <a href="/" class="text-sm text-slate-400 hover:text-white">← Back to home</a>
+      </div>
+      <div class="text-xs sm:text-sm text-slate-400">MVP v0.1</div>
+    </header>
+
+    <main class="mx-auto max-w-6xl px-4 sm:px-6 pb-16 sm:pb-20">
+      <div class="grid md:grid-cols-2 gap-8 md:gap-10 items-center mt-4 md:mt-16">
+
+        <section>
+          <span class="inline-block text-[10px] sm:text-xs font-semibold uppercase tracking-widest text-brand-500 bg-brand-500/10 px-3 py-1 rounded-full">
+            Social · Real-time · Competitive
+          </span>
+          <h1 class="mt-4 sm:mt-5 text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight">
+            Meet players. <span class="text-brand-500">Chat.</span> Challenge. Win.
+          </h1>
+          <p class="mt-3 sm:mt-4 text-sm sm:text-base text-slate-400 leading-relaxed">
+            A virtual lobby where you walk in, see who's online, and start a game in seconds.
+            No downloads. Just play.
+          </p>
+          <ul class="mt-5 sm:mt-6 space-y-2 text-xs sm:text-sm text-slate-300">
+            <li>🎮 Dice, Ludo, and more games coming</li>
+            <li>💬 Real-time chat and challenges</li>
+            <li>🏆 Leaderboards, XP, and achievements</li>
+            <li>🪙 PlayCoins — the in-game currency</li>
+          </ul>
+        </section>
+
+        <section class="rounded-2xl border border-slate-800 bg-slate-900/70 backdrop-blur p-4 sm:p-6 shadow-2xl">
+          <div class="flex gap-2 mb-4 sm:mb-6">
+            <button id="tabLogin" class="flex-1 rounded-lg px-4 py-2 text-sm font-semibold bg-brand-600">Log in</button>
+            <button id="tabRegister" class="flex-1 rounded-lg px-4 py-2 text-sm font-semibold bg-slate-800 text-slate-300">Create account</button>
+          </div>
+
+          <form id="loginForm" class="space-y-3 sm:space-y-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Email</label>
+              <input name="email" type="email" required autocomplete="email"
+                class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Password</label>
+              <input name="password" type="password" required autocomplete="current-password"
+                class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500" />
+            </div>
+            <button type="submit" class="w-full rounded-lg bg-brand-600 hover:bg-brand-700 transition px-4 py-2.5 text-sm font-semibold">Log in</button>
+          </form>
+
+                    <form id="registerForm" class="space-y-3 sm:space-y-4 hidden">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Username</label>
+              <input name="username" type="text" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+"
+                autocomplete="username"
+                class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500" />
+            </div>
+            <div id="refField" class="hidden">
+              <label class="block text-xs font-medium text-emerald-400 mb-1">
+                🎁 Referral code (from a friend — gives you 500 PlayCoins!)
+              </label>
+              <input name="ref_code" type="text" maxlength="16" placeholder="ABC12345"
+                class="w-full rounded-lg bg-emerald-500/10 border border-emerald-500/40 px-3 py-2.5 text-sm font-mono uppercase focus:outline-none focus:border-emerald-500" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Email</label>
+              <input name="email" type="email" required autocomplete="email"
+                class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Password (min 8)</label>
+              <input name="password" type="password" required minlength="8" autocomplete="new-password"
+                class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500" />
+            </div>
+            <button type="submit" class="w-full rounded-lg bg-brand-600 hover:bg-brand-700 transition px-4 py-2.5 text-sm font-semibold">Create account</button>
+          </form>
+
+          <p id="authMsg" class="mt-3 sm:mt-4 text-sm hidden"></p>
+        </section>
+      </div>
+    </main>
+
+    <footer class="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8 text-xs text-slate-500 border-t border-slate-900">
+      © 2026 PlaySphere · Virtual currency only, no real-money gambling.
+    </footer>
+  </div>
+
+  <script type="module" src="/static/js/auth.js"></script>
+
+    <script type="module">
+    // Auto-fill referral code from URL ?ref=CODE
+    const params = new URLSearchParams(location.search);
+    const ref = params.get("ref");
+    if (ref) {
+      const field = document.getElementById("refField");
+      const input = field && field.querySelector("input[name=ref_code]");
+      if (field) field.classList.remove("hidden");
+      if (input) input.value = ref.toUpperCase();
+      // Auto-switch to register tab
+      const regTab = document.getElementById("tabRegister");
+      if (regTab) regTab.click();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Joining room · PlaySphere</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased grid place-items-center p-6">
+
+  <div class="max-w-sm w-full rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-center">
+    <div id="icon" class="text-5xl mb-3">♟️</div>
+    <div id="title" class="text-xl font-black mb-1">Joining room…</div>
+    <div id="sub" class="text-sm text-slate-400">Please wait</div>
+    <a id="fallback" href="/lobby" class="hidden mt-5 inline-block rounded-lg bg-brand-600 hover:bg-brand-700 px-5 py-2.5 text-sm font-bold">Go to Lobby →</a>
+  </div>
+
+  <script type="module">
+    import { api } from "/static/js/api.js";
+
+    const $ = (id) => document.getElementById(id);
+
+    async function boot() {
+      const params = new URLSearchParams(location.search);
+      const code = (params.get("code") || "").trim().toUpperCase();
+
+      if (!code) {
+        $("icon").textContent = "❌";
+        $("title").textContent = "No room code";
+        $("sub").textContent = "Ask your friend for the invite link";
+        $("fallback").classList.remove("hidden");
+        return;
+      }
+
+      if (!api.getToken()) {
+        // Not logged in — bounce to login with return path
+        const back = encodeURIComponent(`/join?code=${code}`);
+        window.location.href = `/login?next=${back}`;
+        return;
+      }
+
+      try {
+        const res = await api.joinRoomByCode(code);
+        $("title").textContent = "Joined!";
+        $("sub").textContent = "Entering the room…";
+        setTimeout(() => {
+          window.location.href = `/room?id=${res.id}`;
+        }, 400);
+      } catch (err) {
+        $("icon").textContent = "⚠️";
+        $("title").textContent = "Could not join";
+        $("sub").textContent = err.message || "Room may be full or started";
+        $("fallback").classList.remove("hidden");
+      }
+    }
+
+    boot();
+  </script>
+</body>
+</html>

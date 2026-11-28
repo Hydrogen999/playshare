@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Dashboard · PlaySphere</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: { brand: { 400: '#a78bfa', 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6' } },
+      fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+    } },
+  };
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  @keyframes xpFill { from { width: 0%; } }
+  @keyframes levelPop { 0% { transform: scale(1); } 50% { transform: scale(1.25); } 100% { transform: scale(1); } }
+  .level-badge.pop { animation: levelPop 0.6s ease-out; }
+  .xp-fill { animation: xpFill 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
+  @media (max-width: 767px) { body { padding-bottom: 80px; } }
+</style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+
+  <!-- DESKTOP HEADER -->
+  <header class="hidden md:block border-b border-slate-900 sticky top-0 z-40 bg-slate-950/95 backdrop-blur">
+    <div class="mx-auto max-w-6xl px-4 sm:px-6 py-3 flex items-center justify-between">
+      <a href="/dashboard" class="flex items-center gap-2">
+        <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold shadow-lg shadow-brand-500/20">P</div>
+        <span class="font-bold hidden sm:inline">PlaySphere</span>
+      </a>
+      <div class="flex items-center gap-3 sm:gap-4 text-sm font-semibold text-slate-300">
+        <a href="/notifications" class="relative text-slate-400 hover:text-white transition">
+          🔔
+          <span id="notifBadge" class="hidden absolute -top-1 -right-2 px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[9px] font-bold"></span>
+        </a>
+        <a href="/friends" class="hover:text-white transition">👥 Friends</a>
+        <a href="/settings" class="hover:text-white transition">⚙️ Settings</a>
+        <button id="logoutBtn" class="text-red-400 hover:text-red-300 transition ml-1">Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MOBILE HEADER -->
+  <header class="md:hidden border-b border-slate-900 sticky top-0 z-40 bg-slate-950/95 backdrop-blur">
+    <div class="px-4 py-3 flex items-center justify-between">
+      <a href="/dashboard" class="flex items-center gap-2">
+        <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold shadow-lg shadow-brand-500/20">P</div>
+        <span class="font-bold">PlaySphere</span>
+      </a>
+      <div class="flex items-center gap-4">
+        <a href="/notifications" class="relative text-slate-400 hover:text-white">
+          🔔
+          <span id="notifBadgeMobile" class="hidden absolute -top-1 -right-2 px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[9px] font-bold"></span>
+        </a>
+        <button id="logoutBtnMobile" class="text-red-400 hover:text-red-300">Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
+
+    <!-- PROFILE HEADER -->
+    <div class="flex items-center gap-5 mb-8">
+      <div id="avatarSlot"></div>
+      <div class="flex-1 min-w-0">
+        <h1 class="text-2xl sm:text-3xl font-black truncate flex items-center gap-2">
+          Welcome, <span id="username" class="text-brand-500">…</span>
+          <span id="premiumBadge" class="hidden text-amber-400 text-xl">👑</span>
+        </h1>
+        <div class="mt-1.5 flex items-center gap-2 flex-wrap">
+          <span id="levelBadge" class="text-xs font-bold px-2 py-0.5 rounded bg-brand-500/20 text-brand-400 border border-brand-500/40">LV 1</span>
+          <span id="premiumBadgeSmall" class="hidden text-xs font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40">👑 PREMIUM</span>
+          <span id="subline" class="text-xs sm:text-sm text-slate-400 truncate">Ready to play?</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- BIG GAME CARDS -->
+    <div class="grid sm:grid-cols-2 gap-4 mb-6">
+      <!-- Chess -->
+      <div class="relative overflow-hidden rounded-2xl border-2 border-slate-700 bg-gradient-to-br from-slate-800 to-slate-900 p-5 group hover:border-brand-500/50 transition">
+        <div class="absolute top-0 right-0 p-4 text-6xl opacity-10 group-hover:opacity-20 transition">♟️</div>
+        <div class="relative z-10">
+          <div class="flex items-center gap-2 mb-2"><span class="text-xl">♟️</span><h2 class="font-black text-lg">Chess</h2></div>
+          <div class="flex items-center gap-3 mt-4">
+            <div id="chessRating" class="text-3xl font-black text-brand-400">1200</div>
+            <div id="chessTierLabel" class="text-xs font-bold px-2 py-1 rounded border">Bronze</div>
+          </div>
+          <div class="text-xs text-slate-400 mt-2" id="chessRecord">Play your first game</div>
+          <a href="/room?game=chess" class="mt-4 block text-center w-full rounded-lg bg-slate-700 hover:bg-slate-600 px-4 py-2 text-sm font-bold transition">Play Chess</a>
+        </div>
+      </div>
+
+      <!-- Ludo -->
+      <div class="relative overflow-hidden rounded-2xl border-2 border-slate-700 bg-gradient-to-br from-slate-800 to-slate-900 p-5 group hover:border-emerald-500/50 transition">
+        <div class="absolute top-0 right-0 p-4 text-6xl opacity-10 group-hover:opacity-20 transition">🎯</div>
+        <div class="relative z-10">
+          <div class="flex items-center gap-2 mb-2"><span class="text-xl">🎯</span><h2 class="font-black text-lg">Ludo</h2></div>
+          <div class="text-sm text-slate-400 mt-4 mb-6">Classic board game. Play with 2, 3, or 4 players in real-time.</div>
+          <a href="/lobby" class="mt-4 block text-center w-full rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 text-sm font-bold transition">Find a Match</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- XP & DAILY -->
+    <div class="grid sm:grid-cols-2 gap-4 mb-6">
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-xs uppercase tracking-widest text-slate-500">XP Progress</div>
+          <div class="text-xs text-slate-400"><span id="xpInLevel">0</span> / <span id="xpNeeded">100</span></div>
+        </div>
+        <div class="h-2.5 rounded-full bg-slate-800 overflow-hidden"><div id="xpBar" class="h-full rounded-full bg-gradient-to-r from-brand-500 to-emerald-400 xp-fill" style="width: 0%"></div></div>
+      </div>
+
+      <div id="dailyCard" class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/90 to-slate-900/40 p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-xs uppercase tracking-widest text-brand-400 font-bold">🎁 Daily Reward</div>
+          <div id="dailyStreak" class="text-xs text-slate-400">Day 1</div>
+        </div>
+        <div id="dailyDays" class="flex justify-between gap-1 mt-3"></div>
+        <button id="claimDailyBtn" class="mt-4 w-full rounded-lg bg-brand-600 hover:bg-brand-700 px-4 py-2 text-sm font-bold transition">Claim</button>
+        <div id="dailyMsg" class="hidden absolute inset-0 grid place-items-center bg-slate-900/90 backdrop-blur text-emerald-400 font-bold rounded-2xl"></div>
+      </div>
+    </div>
+
+    <!-- QUICK STATS -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-center">
+        <div class="text-xs text-slate-500 uppercase">Coins</div>
+        <div id="tokens" class="text-xl font-bold mt-1 text-amber-400">–</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-center">
+        <div class="text-xs text-slate-500 uppercase">Level</div>
+        <div id="level" class="text-xl font-bold mt-1">–</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-center">
+        <div class="text-xs text-slate-500 uppercase">Games</div>
+        <div id="statGames" class="text-xl font-bold mt-1">–</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-center">
+        <div class="text-xs text-slate-500 uppercase">Win Rate</div>
+        <div id="statWinRate" class="text-xl font-bold mt-1">–</div>
+      </div>
+    </div>
+
+    <!-- ACTION GRID -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+      <a href="/buy" class="text-center rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition px-2 py-3 text-xs font-bold text-amber-400">🪙 Buy Coins</a>
+      <a href="/shop" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">🛍️ Shop</a>
+      <a href="/tournaments" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">🏆 Tournaments</a>
+      <a href="/battlepass" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">🎫 Battle Pass</a>
+      <a href="/achievements" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">🏅 Achievements</a>
+      <a href="/leaderboards" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">📊 Leaderboards</a>
+      <a href="/referral" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">🎁 Invite</a>
+      <a href="/lobby" class="text-center rounded-xl border border-slate-700 hover:bg-slate-800 transition px-2 py-3 text-xs font-bold">🚪 Lobby</a>
+    </div>
+
+    <!-- PREMIUM BANNER -->
+    <div class="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-500/10 to-slate-900/60 p-5 shadow-lg">
+      <div class="flex items-center gap-3">
+        <div class="text-2xl">👑</div>
+        <div>
+          <div class="font-bold text-amber-400">Go Premium</div>
+          <div class="text-xs text-slate-400">Get exclusive crowns, 2x daily rewards, and no ads.</div>
+        </div>
+      </div>
+      <a href="/premium" class="rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 px-6 py-2.5 text-sm font-black text-slate-900 shadow-lg hover:opacity-90 transition w-full sm:w-auto text-center">Upgrade</a>
+    </div>
+
+    <!-- SHARE BUTTON -->
+    <div class="mb-6">
+      <button id="shareProfileBtn" class="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700 px-4 py-3 text-sm font-bold transition shadow-lg">
+        <span class="text-lg">🔗</span> Share My Profile &amp; Stats
+      </button>
+    </div>
+
+    <!-- AD SLOTS -->
+    <div id="bannerSlot" class="hidden mb-6"></div>
+    <div id="rewardedSlot" class="hidden mb-6"></div>
+
+    <!-- RECENT MATCHES -->
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <div class="text-xs uppercase tracking-widest text-slate-500 mb-4 font-bold">Recent Matches</div>
+      <div id="matchList" class="space-y-2">
+        <div class="text-slate-500 text-sm">Loading…</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- MOBILE BOTTOM NAVIGATION BAR -->
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur border-t border-slate-800 pb-safe">
+    <div class="flex items-center justify-around h-16">
+      <a href="/dashboard" class="flex flex-col items-center gap-1 text-brand-500">
+        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+        <span class="text-[10px] font-bold">Home</span>
+      </a>
+      <a href="/lobby" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 transition">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+        <span class="text-[10px] font-bold">Lobby</span>
+      </a>
+      <a href="/friends" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 transition">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+        <span class="text-[10px] font-bold">Friends</span>
+      </a>
+      <a href="/settings" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 transition">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+        <span class="text-[10px] font-bold">Profile</span>
+      </a>
+    </div>
+  </nav>
+
+  <script type="module" src="/static/js/dashboard.js"></script>
+  <script type="module">
+    import { renderBanner, renderRewarded } from "/static/js/ads.js";
+    renderBanner("bannerSlot");
+    renderRewarded("rewardedSlot");
+
+    document.getElementById("logoutBtnMobile")?.addEventListener("click", () => {
+      localStorage.removeItem("ps_token");
+      window.location.href = "/";
+    });
+  </script>
+</body>
+</html>

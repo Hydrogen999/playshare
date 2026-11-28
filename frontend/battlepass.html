@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Battle Pass · PlaySphere</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: { brand: { 400: '#a78bfa', 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6' } },
+      fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+    } },
+  };
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  .bp-card { min-width: 130px; }
+  .bp-claimed { opacity: 0.4; filter: grayscale(0.5); }
+  .bp-locked { opacity: 0.55; }
+  @keyframes glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(250,204,21,0); } 50% { box-shadow: 0 0 20px 4px rgba(250,204,21,0.4); } }
+  .bp-claimable { animation: glow 1.8s ease-in-out infinite; }
+</style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+
+  <header class="border-b border-slate-900 sticky top-0 z-40 bg-slate-950/95 backdrop-blur">
+    <div class="mx-auto max-w-6xl px-3 sm:px-6 py-3 flex items-center justify-between">
+      <a href="/dashboard" class="flex items-center gap-2">
+        <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center font-extrabold">P</div>
+        <span class="font-bold hidden sm:inline">PlaySphere</span>
+      </a>
+      <a href="/dashboard" class="text-sm text-slate-400 hover:text-slate-100">← Back</a>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-3 sm:px-6 py-5 sm:py-10">
+    <div class="text-center">
+      <div class="text-4xl mb-2">🎫</div>
+      <h1 class="text-2xl sm:text-3xl font-black" id="seasonName">Battle Pass</h1>
+      <p class="text-slate-400 mt-1 text-xs sm:text-sm" id="seasonMeta">Loading…</p>
+    </div>
+
+    <div id="msg" class="hidden mt-4 rounded-lg p-3 text-sm text-center border"></div>
+
+    <!-- Top summary bar -->
+    <div id="summary" class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-500">Your Tier</div>
+          <div class="text-2xl sm:text-3xl font-black">
+            <span id="curTier">0</span>
+            <span class="text-slate-500 text-base">/ 20</span>
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-500">Season XP</div>
+          <div class="text-xl sm:text-2xl font-bold text-brand-400" id="curXp">0</div>
+        </div>
+      </div>
+      <div class="h-3 rounded-full bg-slate-800 overflow-hidden">
+        <div id="xpBar" class="h-full rounded-full bg-gradient-to-r from-brand-500 to-fuchsia-500 transition-all" style="width: 0%"></div>
+      </div>
+      <div class="text-xs text-slate-500 mt-1 text-right" id="xpNeeded">–</div>
+
+      <!-- Premium status / buy -->
+      <div id="premiumBar" class="mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+        <div class="text-sm">
+          <div class="font-bold text-amber-400">👑 Premium Pass</div>
+          <div class="text-[11px] text-slate-400" id="premiumDesc">Unlock exclusive rewards on every tier</div>
+        </div>
+        <button id="buyBtn" class="rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 hover:opacity-90 text-slate-900 px-4 py-2 text-sm font-black whitespace-nowrap">
+          Buy Pass
+        </button>
+      </div>
+    </div>
+
+    <!-- Claim all buttons -->
+    <div class="grid grid-cols-2 gap-2 mt-3">
+      <button id="claimFreeBtn" class="rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-4 py-2.5 text-sm font-bold transition">
+        Claim All Free
+      </button>
+      <button id="claimPremBtn" class="rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-400 px-4 py-2.5 text-sm font-bold transition">
+        Claim All Premium
+      </button>
+    </div>
+
+    <!-- Tier carousel -->
+    <div class="mt-6 overflow-x-auto pb-4">
+      <div id="tiers" class="flex gap-3" style="min-width: max-content;">
+        <div class="text-center text-slate-500 text-sm py-8 px-8">Loading…</div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="/static/js/battlepass.js"></script>
+</body>
+</html>
